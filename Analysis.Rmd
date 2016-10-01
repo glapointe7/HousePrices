@@ -1,0 +1,349 @@
+---
+title: "House Prices"
+author: "Gabriel Lapointe"
+date: "September 18, 2016"
+output:
+  html_document:
+    highlight: pygments
+    keep_md: yes
+    number_sections: yes
+    toc: yes
+  pdf_document:
+    toc: yes
+variant: markdown_github
+---
+
+
+# Data Acquisition
+
+
+
+## Objective
+With 79 explanatory variables describing (almost) every aspect of residential homes in Ames, Iowa, this competition challenges you to predict the final price of each home.
+
+
+## Data Source
+The data is provided by Kaggle at https://www.kaggle.com/c/house-prices-advanced-regression-techniques/data. 
+
+
+## Dataset Questions
+Before we start the exploration of the dataset, we need to write a list of questions about this dataset considering the problem we have to solve. 
+
+* How big is the dataset?
+* Does the dataset contains `NA` or missing values? Can we replace them by a value? Why?
+* Does the data is coherent (date with same format, no out of bound values, no misspelled words, etc.)?
+* What does the data look like and what are the relationships between features if they exist?
+* What are the measures used?
+* Can we solve the problem with this dataset?
+
+
+## Evaluation Metrics
+Submissions are evaluated on Root-Mean-Squared-Error (RMSE) between the logarithm of the predicted value and the logarithm of the observed sales price. (Taking logs means that errors in predicting expensive houses and cheap houses will affect the result equally.)
+
+
+## Methodology
+In this document, we start by exploring the dataset and build the data story behind it. This will give us important insights which will answer our questions on this dataset. The next step is to proceed to feature engineering which consists to create, remove or replace features regarding insights we got when exploring the dataset. Then, we will peoceed to a features selection to know which features are strongly correlated to the outcome. We will ensure our new dataset is a valid input for each of our prediction models. We will fine-tune the model's parameters by cross-validating the model with the train set to get the optimal parameters. After applying our model to the test set, we will visualize the predictions calculated and explain the results. Finally, we will give our recommandations to fulfill the objective of this project.
+
+
+
+<!------------------------------------------------------------EXPLORATORY ANALYSIS------------------------------------------------------------------------------>
+
+
+
+# Data Exploratory
+In this section, we explore the dataset and we test hypotheses on features. The objective is to visualize and understand the relationships between features in the dataset we have to solve the problem. We will also compare changes we will make to this dataset to validate if they have significant influance on the outcome or not.
+
+A house buyer could be interested to know the following features about the house:
+
+* Number of bedrooms
+* Number of bathrooms
+* Total Number of rooms
+* Is there a basement
+* Is there a garage and how many cars can enter if yes
+* The area of the house's land 
+* The general quality
+
+
+## Loading Dataset
+We load 'train.csv' and 'test.csv'. Then, we merge them to proceed to the exploration of the entire dataset.
+
+```{r echo = TRUE, message = FALSE, warning = FALSE}
+library(data.table)
+library(dplyr)
+library(scales)
+library(gridExtra)
+library(ggplot2)
+library(corrplot)
+
+setwd("/home/gabriel/Documents/Projects/HousePrices")
+#source("Visualisation.R")
+#source("Dataset.R")
+
+## Remove scientific notation (e.g. E-005).
+options(scipen = 999)
+
+set.seed(1234)
+
+na.strings <- c("NA")
+train <- fread(input = "train.csv", 
+               showProgress = FALSE,
+               stringsAsFactors = FALSE, 
+               na.strings = na.strings, 
+               header = TRUE)
+
+test <- fread(input = "test.csv", 
+              showProgress = FALSE,
+              stringsAsFactors = FALSE, 
+              na.strings = na.strings, 
+              header = TRUE)
+
+test$SalePrice <- -1
+dataset <- rbind(train, test)
+```
+
+
+## Coherence of the Dataset
+We have to check if the dataset is valid with the possible values given in the code book. Thus, we need to ensure that there are no mispelled words or no values that are not in the code book. Also, all numerical values should be coherent with their description meaning that their bounds have to be logiclly correct. Regarding the code book, none of the categorical features have over 25 features. We display the unique values for each features where the number of unique values is less or equal than 25. Then, we will compare the values mentioned in the code book with the values we have in the dataset.
+
+```{r echo = TRUE, message = FALSE, warning = FALSE}
+getUniqueValues <- function(feature)
+{
+    feature.values <- unique(feature)
+    if(length(feature.values) <= 25)
+    {
+        paste(sort(feature.values, na.last = TRUE), collapse = ", ")
+    }
+}
+
+sapply(dataset, getUniqueValues)
+```
+
+Comparing with the code book's possible codes manually, the followings have difference:
+
+| Feature            | Dataset      | CodeBook        |
+| ------------------ | ------------ | --------------- |
+| MSZoning           | C (all)      | C |
+| MSZoning           | NA           | No corresponding value |
+| Alley              | Empty string | No corresponding value |
+| Utilities          | NA           | No corresponding value |
+| Neighborhood       | NAmes        | Names (should be NAmes) |
+| BldgType           | 2fmCon       | 2FmCon |
+| BldgType           | Duplex       | Duplx |
+| BldgType           | Twnhs        | TwnhsI |
+| Exterior1st        | NA           | No corresponding value |
+| Exterior2nd        | NA           | No corresponding value |
+| Exterior2nd        | Wd Shng      | WdShing |
+| MasVnrType         | NA           | No corresponding value |
+| Electrical         | NA           | No corresponding value |
+| KitchenQual        | NA           | No corresponding value |
+| Functional         | NA           | No corresponding value |
+| MiscFeature        | Empty string | No corresponding value |
+| SaleType           | NA           | No corresponding value |
+| Bedroom            | Named 'BedroomAbvGr' | | Named 'Bedroom', but to be coherent, it should be named 'BedroomAbvGr' |
+
+To be coherent with the code book (assuming the code book is the truth), we will replace mispelled categories in the dataset by their corresponding one from the code book. Also, the empty strings and spaces will be replaced by NA. Note that we will assume that the string 'Twnhs' corresponds to the string 'TwnhsI' in the code book.
+
+```{r echo = TRUE, message = FALSE, warning = FALSE}
+feature.emptystring <- c("Alley", "MiscFeature")
+dataset[, feature.emptystring] <- dataset %>%
+    select(Alley, MiscFeature) %>%
+    sapply(function(feature) gsub("^$|^ $", NA, feature))
+
+dataset$MSZoning[dataset$MSZoning == "C (all)"] <- "C"
+
+dataset$BldgType[dataset$BldgType == "2fmCon"] <- "2FmCon"
+dataset$BldgType[dataset$BldgType == "Duplex"] <- "Duplx"
+dataset$BldgType[dataset$BldgType == "Twnhs"] <- "TwnhsI"
+
+dataset$Exterior2nd[dataset$Exterior2nd == "Wd Shng"] <- "WdShing"
+
+unique(dataset$Alley)
+unique(dataset$MSZoning)
+unique(dataset$BldgType)
+unique(dataset$Exterior2nd)
+```
+
+Since we have feature names starting by a digit which is not allowed in programming language, we will rename them with their full name.
+
+* 1stFlrSF renamed to FirstFlrSF
+* 2ndFlrSF renamed to SecondFlrSF
+* 3SsnPorch renamed to ThreeSsnPorch
+
+```{r echo = TRUE, message = FALSE, warning = FALSE}
+colnames(dataset)[colnames(dataset) == '1stFlrSF'] <- 'FirstFlrSF'
+colnames(dataset)[colnames(dataset) == '2ndFlrSF'] <- 'SecondFlrSF'
+colnames(dataset)[colnames(dataset) == '3SsnPorch'] <- 'ThreeSsnPorch'
+
+train <- dataset[dataset$SalePrice > -1, ]
+test <- dataset[dataset$SalePrice == -1, ]
+```
+
+
+## Missing Values
+Per the code book of this dataset, we know that the NA values mean 'No' or 'None' and they are used only for categorical features. The other NA values that are not in the code book will be interpreted as if we do not have information for the house's feature. this goes also for the empty strings that will be replaced by NA. Thus, we will replace all of them by zero without losing any information.
+
+Also, we expect for numeric features that the value 0 means the same thing as a NA value. For example, a garage area of 0 means that there is no garage with this house. However, if the value 0 is used for an amount of money, then it is a real 0.
+
+
+## Features
+Here is the list of features with their type.
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+str(dataset)
+```
+
+We see now a plot of the correlation between numeric features of the train set.
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+features.numeric <- names(train)[which(sapply(train, is.numeric))]
+train.numeric <- train[, .SD, .SDcols = features.numeric]
+correlations <- cor(na.omit(train.numeric[, -1, with = FALSE]))
+
+# correlations
+row_indic <- apply(correlations, 1, function(x) sum(x > 0.3 | x < -0.3) > 1)
+
+correlations <- correlations[row_indic, row_indic]
+corrplot(correlations, method = "pie")
+sale.price <- data.frame(SalePriceCorrelation = sort(correlations[, "SalePrice"], decreasing = TRUE))
+print(sale.price)
+```
+
+Regarding the sale price, we note that some features are more than 60% correlated with the sale price. We will produce plots for each of them to get insights.
+
+
+## Sale Price
+The sale price should follow the normal distribution. However, we need to normalize the sale price by taking its logarithm.
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+plot.saleprice <- ggplot(train, aes(x = SalePrice)) + 
+    geom_histogram(col = 'white') + 
+    theme_light() + 
+    ggtitle("Distribution of the Sale Price") + 
+    labs(x = "Sale Price ($)")
+
+plot.logsaleprice <- ggplot(train, aes(x = log(SalePrice))) + 
+    geom_histogram(col = 'white') + 
+    theme_light() + 
+    ggtitle("Distribution of the log of Sale Price") + 
+    labs(x = "Log Sale Price (log$)")
+
+grid.arrange(plot.saleprice, plot.logsaleprice, ncol = 2)
+
+summary(train$SalePrice)
+```
+
+
+## Overall Quality Rate
+The overall quality rate is the most correlated feature to the sale price as seen previously. We look at the average sale price for each overall quality rate and try to figure out an equation that will best approximate our data.
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+train %>% 
+    select(OverallQual, SalePrice) %>%
+    group_by(OverallQual) %>%
+    summarise(MeanSalePrice = mean(SalePrice)) %>%
+    ungroup() %>%
+    arrange(OverallQual) %>%
+    print(MeanSalePrice) %>%
+    ggplot(aes(x = OverallQual, y = MeanSalePrice)) +
+        geom_line(aes(colour = "Right")) + 
+        geom_line(aes(x = OverallQual, 
+                      y = 939113/180*OverallQual*OverallQual - 2561483/180*OverallQual + 354979/6, 
+                      #y = 6699.55*OverallQual*OverallQual - 36934.98*OverallQual + 137983.01,
+                      colour = "Approx.")) +
+        ggtitle("Distribution of Average Sale Price in function of the overall quality rate") + 
+        labs(y = "Average sale price ($)", x = "Overall Quality Rate") +
+        scale_colour_manual("Legend",
+                            breaks = c("Approx.", "Right"),
+                            values = c("red", "black"))
+```
+
+Note that the equation used to approximate is a parabola where the equation has been built from 3 points (OverallQual, MeanSalePrice) where the overall quality rates chosen are 1, 6 and 10 with their corresponding average sale price. The equation used to approximate is $M(Q) = \dfrac{939113}{180}Q^2-\dfrac{2561483}{180}Q+\dfrac{354979}{6}$ where $Q$ is the overall quality rate and $M(Q)$ is the mean sale price in function of $Q$.
+
+
+## Above grade (ground) living area
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+train %>% 
+    select(GrLivArea, SalePrice) %>%
+    ggplot(aes(x = GrLivArea, y = SalePrice)) +
+        geom_point(stat = "identity") + 
+        geom_smooth(method = "lm") +
+        ggtitle("Distribution of Sale Price in function of the GrLivArea") + 
+        labs(x = "Grade Living Area (ft²)", y = "Sale Price ($)")
+```
+
+
+## Garage Cars
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+train %>% 
+    select(GarageCars, SalePrice) %>%
+    group_by(GarageCars) %>%
+    summarise(MeanSalePrice = mean(SalePrice)) %>%
+    ungroup() %>%
+    arrange(GarageCars) %>%
+    print(MeanSalePrice) %>%
+    ggplot(aes(x = GarageCars, y = MeanSalePrice)) +
+        geom_line() + 
+        ggtitle("Distribution of Average Sale Price in function of the Garage Cars") + 
+        labs(y = "Average sale price ($)", x = "Garage Cars")
+```
+
+
+## Garage Area
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+train %>% 
+    select(GarageArea, SalePrice) %>%
+    ggplot(aes(x = GarageArea, y = SalePrice)) +
+        geom_point(stat = "identity") + 
+        geom_smooth(method = "lm") +
+        ggtitle("Distribution of Average Sale Price in function of the Garage Area") + 
+        labs(x = "Garage Area (ft²)", y = "Sale Price ($)")
+```
+
+
+## Total Basement Area
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+train %>% 
+    select(TotalBsmtSF, SalePrice) %>%
+    ggplot(aes(x = TotalBsmtSF, y = SalePrice)) +
+        geom_point(stat = "identity") + 
+        geom_smooth(method = "lm") +
+        ggtitle("Distribution of Average Sale Price in function of the Total Basement Area") + 
+        labs(x = "Total Basement Area (ft²)", y = "Sale Price ($)")
+```
+
+
+## First Floor Area
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+train %>% 
+    select(FirstFlrSF, SalePrice) %>%
+    ggplot(aes(x = FirstFlrSF, y = SalePrice)) +
+        geom_point(stat = "identity") +
+        geom_smooth(method = "lm") +
+        ggtitle("Distribution of Average Sale Price in function of the First Floor Area") + 
+        labs(x = "First Floor Area (ft²)", y = "Sale Price ($)")
+```
+
+
+# Feature Selection
+
+
+# Feature Engineering
+
+
+# Models Building
+
+
+# Results
+
+
+# Conclusion
