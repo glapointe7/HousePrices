@@ -34,6 +34,7 @@ Before we start the exploration of the dataset, we need to write a list of quest
 * Does the data is coherent (date with same format, no out of bound values, no misspelled words, etc.)?
 * What does the data look like and what are the relationships between features if they exist?
 * What are the measures used?
+* Does the dataset contains abnormal data?
 * Can we solve the problem with this dataset?
 
 
@@ -45,24 +46,8 @@ Submissions are evaluated on Root-Mean-Squared-Error (RMSE) between the logarith
 In this document, we start by exploring the dataset and build the data story behind it. This will give us important insights which will answer our questions on this dataset. The next step is to proceed to feature engineering which consists to create, remove or replace features regarding insights we got when exploring the dataset. Then, we will peoceed to a features selection to know which features are strongly correlated to the outcome. We will ensure our new dataset is a valid input for each of our prediction models. We will fine-tune the model's parameters by cross-validating the model with the train set to get the optimal parameters. After applying our model to the test set, we will visualize the predictions calculated and explain the results. Finally, we will give our recommandations to fulfill the objective of this project.
 
 
-
-<!------------------------------------------------------------EXPLORATORY ANALYSIS------------------------------------------------------------------------------>
-
-
-
-# Data Exploratory
-In this section, we explore the dataset and we test hypotheses on features. The objective is to visualize and understand the relationships between features in the dataset we have to solve the problem. We will also compare changes we will make to this dataset to validate if they have significant influance on the outcome or not.
-
-A house buyer could be interested to know the following features about the house:
-
-* Area of the basement and the floors
-* Area of the garage and number of cars that can enter
-* The area of the house's land 
-* The overall quality
-
-
 ## Loading Dataset
-We load 'train.csv' and 'test.csv'. Then, we merge them to proceed to the exploration of the entire dataset.
+We load 'train.csv' and 'test.csv'. Then, we merge them to proceed to the cleaning and exploration of the entire dataset.
 
 ```{r echo = TRUE, message = FALSE, warning = FALSE}
 library(data.table)
@@ -72,19 +57,18 @@ library(gridExtra)
 library(ggplot2)
 library(caret)
 library(corrplot)
+library(Matrix)
 library(randomForest)
 library(xgboost)
 
 setwd("/home/gabriel/Documents/Projects/HousePrices")
-#source("Visualisation.R")
-#source("Dataset.R")
 
 ## Remove scientific notation (e.g. E-005).
 options(scipen = 999)
 
 set.seed(1234)
 
-na.strings <- c("NA")
+na.strings <- c("NA", "None")
 train <- fread(input = "train.csv", 
                showProgress = FALSE,
                stringsAsFactors = FALSE, 
@@ -101,9 +85,21 @@ test$SalePrice <- -1
 dataset <- rbind(train, test)
 ```
 
+| Dataset            |  File Size (Kb) | # Houses              | # Features            |
+| ------------------ | --------------- | --------------------- | --------------------- |
+| train.csv          | 460.7           | `r nrow(train)`       | `r ncol(train)`       |
+| test.csv           | 451.4           | `r nrow(test)`        | `r ncol(test) - 1`    |
+| **Total(dataset)** | **912.1**       | **`r nrow(dataset)`** | **`r ncol(dataset)`** |
 
-## Coherence of the Dataset
-We have to check if the dataset is valid with the possible values given in the code book. Thus, we need to ensure that there are no mispelled words or no values that are not in the code book. Also, all numerical values should be coherent with their description meaning that their bounds have to be logiclly correct. Regarding the code book, none of the categorical features have over 25 features. We display the unique values for each features where the number of unique values is less or equal than 25. Then, we will compare the values mentioned in the code book with the values we have in the dataset.
+These datasets are very small. Each observation (row) is a house where we want to predict their sale price in the test set.
+
+
+
+<!------------------------------------------------------------DATASET CLEANING------------------------------------------------------------------------------>
+
+
+# Dataset Cleaning
+In this section, we have to check if the dataset is valid with the possible values given in the code book. Thus, we need to ensure that there are no mispelled words or no values that are not in the code book. Also, all numerical values should be coherent with their description meaning that their bounds have to be logically correct. Regarding the code book, none of the categorical features have over 25 unique values. We then display the unique values of these categorical features. Then, we will compare the values mentioned in the code book with the values we have in the dataset.
 
 ```{r echo = TRUE, message = FALSE, warning = FALSE}
 getUniqueValues <- function(feature)
@@ -118,7 +114,9 @@ getUniqueValues <- function(feature)
 sapply(dataset, getUniqueValues)
 ```
 
-Comparing with the code book's possible codes manually, the followings have difference:
+
+## Feature Names Harmonization
+We need to harmonize the feature names to be coherent with the code book. Comparing with the code book's possible codes manually, the followings have difference:
 
 | Feature            | Dataset      | CodeBook        |
 | ------------------ | ------------ | --------------- |
@@ -139,7 +137,7 @@ Comparing with the code book's possible codes manually, the followings have diff
 | Functional         | NA           | No corresponding value |
 | MiscFeature        | Empty string | No corresponding value |
 | SaleType           | NA           | No corresponding value |
-| Bedroom            | Named 'BedroomAbvGr' | | Named 'Bedroom', but to be coherent, it should be named 'BedroomAbvGr' |
+| Bedroom            | Named 'BedroomAbvGr' | Named 'Bedroom', but to be coherent, it should be named 'BedroomAbvGr' |
 
 To be coherent with the code book (assuming the code book is the truth), we will replace mispelled categories in the dataset by their corresponding one from the code book. Also, the empty strings and spaces will be replaced by NA. Note that we will assume that the string 'Twnhs' corresponds to the string 'TwnhsI' in the code book.
 
@@ -163,147 +161,303 @@ unique(dataset$BldgType)
 unique(dataset$Exterior2nd)
 ```
 
-Since we have feature names starting by a digit which is not allowed in programming language, we will rename them with their full name.
+Since we have feature names starting by a digit which is not allowed in programming language when refering to them, we will rename them with their full name.
 
-* 1stFlrSF renamed to FirstFlrSF
-* 2ndFlrSF renamed to SecondFlrSF
-* 3SsnPorch renamed to ThreeSsnPorch
+* 1stFlrSF renamed to FirstFloorArea
+* 2ndFlrSF renamed to SecondFloorArea
+* 3SsnPorch renamed to ThreeSeasonPorch
+* HeatingQC renamed to HeatingQualCond
+* FireplaceQu renamed to FireplaceQual
+* PoolQC renamed to PoolQualCond
 
 ```{r echo = TRUE, message = FALSE, warning = FALSE}
-colnames(dataset)[colnames(dataset) == '1stFlrSF'] <- 'FirstFlrSF'
-colnames(dataset)[colnames(dataset) == '2ndFlrSF'] <- 'SecondFlrSF'
-colnames(dataset)[colnames(dataset) == '3SsnPorch'] <- 'ThreeSsnPorch'
+colnames(dataset)[colnames(dataset) == '1stFlrSF'] <- 'FirstFloorArea'
+colnames(dataset)[colnames(dataset) == '2ndFlrSF'] <- 'SecondFloorArea'
+colnames(dataset)[colnames(dataset) == '3SsnPorch'] <- 'ThreeSeasonPorchArea'
+colnames(dataset)[colnames(dataset) == 'HeatingQC'] <- 'HeatingQualCond'
+colnames(dataset)[colnames(dataset) == 'FireplaceQu'] <- 'FireplaceQual'
+colnames(dataset)[colnames(dataset) == 'PoolQC'] <- 'PoolQualCond'
 
 train <- dataset[dataset$SalePrice > -1, ]
 test <- dataset[dataset$SalePrice == -1, ]
 ```
 
-We also need to check the logic in the dataset to make sure the data make sense. Let's enumerate hypotheses and prove them to ensure the coherence of the data.
 
-1. The feature '1stFlrSF' does not have an area of 0 ft². Otherwise, there would not have a first floor, thus no stories at all and then, no house.
-2. It is possible to have a second floor area of 0 ft². This means that there is no second floor. Therefore, the number of stories must be 1 or 1½. 
-3. The number of stories should always be greater or equal to 1.
-4. The HouseStyle feature values match with the values of the feature MSSubClass. Thus, the feature HouseStyle can be replaced by MSSubClass since this is a one-to-many mapping.
-5. If the second floor area is not 0, then the stories are greater or equal to 1.5. Note that a 1.5 story house means that the main bedroom is on the first floor and the other bedrooms are on the second floors.
-6. Values of MSSubClass for 1 and 2 stories match with the YearBuilt.
-7. If there is no garage with the house, then GarageType = NA, GarageYrBlt = NA, GarageFinish = NA, GarageCars = 0, GarageArea = 0, GarageQual = NA and GarageCond = NA.
-8. If there is no basement in the house, then TotalBsmtSF = 0, BsmtUnfSF = 0, BsmtFinSF2 = 0, BsmtHalfBath = 0, BsmtFullBath = 0, BsmtQual = NA and BsmtCond = NA, BsmtExposure = NA, BsmtFinType1 = NA, BsmtFinSF1 = 0, BsmtFinType2 = NA.
-9. If there are no fireplaces, then FireplaceQu = NA.
-10. If there are no Pool, then PoolArea = 0 and PoolQC = NA.
+## Anomalies Detection
+We also need to check the logic in the dataset to make sure the data make sense. We will enumerate facts coming from the code book and from mathematics logic to detect anomalies in this dataset. We will need to identify these anomalies and check how many of them we will find to calculate the percentage of abnormal houses in this dataset.
 
-The minimum area of the first floor is `r min(dataset$FirstFlrSF)` ft² which is greater than 0. Looking at features 'HouseStyle' and 'MSSubClass' in the code book, there is neither NA value nor another value indicating that there is no story in the house. Indeed, we have `r length(dataset$HouseStyle[is.na(dataset$HouseStyle)])` NA values for 'HouseStyle' and `r length(dataset$MSSubClass[is.na(dataset$MSSubClass)])` NA values for 'MSSubClass'. Thus, the first hypothesis is correct.
 
-The minimum area of the second floor is `r min(dataset$SecondFlrSF)` ft². Looking at the feature 'MSSubClass' in the code book, the codes 60, 70, 75 and 160 must not be used. Indeed, the codes used in the dataset are `r unique(sort(dataset$MSSubClass[dataset$SecondFlrSF == 0]))`. For the feature 'HouseStyle', the codes '2Story', '2.5Fin' and '2.5Unf' must not be used. Indeed, the codes used in the dataset are `r unique(sort(dataset$HouseStyle[dataset$SecondFlrSF == 0]))`. Therefore, the second hypothesis is correct.
+1. The feature 'FirstFloorArea' must not have an area of 0 ft². Otherwise, there would not have a first floor, thus no stories at all and then, no house.
 
-The third hypothesis is correct looking at the possible values of the features 'HouseStyle' and 'MSSubClass' in the code book. Also, we have seen that there is no NA value for those features in the dataset.
+The minimum area of the first floor is `r min(dataset$FirstFloorArea)` ft². Looking at features 'HouseStyle' and 'MSSubClass' in the code book, there is neither NA value nor another value indicating that there is no story in the house. Indeed, we have `r length(dataset$HouseStyle[is.na(dataset$HouseStyle)])` NA values for 'HouseStyle' and `r length(dataset$MSSubClass[is.na(dataset$MSSubClass)])` NA values for 'MSSubClass'.
 
-To prove the fourth hypothesis, we have to do a mapping between values of 'HouseStyle' and 'MSSubClass'. The mapping to check is the following:
+
+2. It is possible to have a second floor area of 0 ft². This is equivalent to say that there is no second floor. Therefore, the number of stories must be 1. Note that a 1.5 story house has 2 levels thus 2 floors and then the second floor area is greater than 0 ft².
+
+The minimum area of the second floor is `r min(dataset$SecondFloorArea)` ft². Looking at the feature 'MSSubClass' in the code book, the codes 45, 50, 60, 70, 75, 150, 160 must not be used. For the feature 'HouseStyle', the codes '1Story', 'SFoyer' and 'SLvl' are the possible choices.
+
+```{r echo = TRUE, message = FALSE, warning = FALSE}
+id <- dataset %>%
+    filter(SecondFloorArea == 0, !(HouseStyle %in% c("1Story", "SFoyer", "SLvl"))) %>%
+    select(Id, SecondFloorArea, HouseStyle, MSSubClass)
+
+id <- bind_rows(id, dataset %>%
+    filter(SecondFloorArea > 0, HouseStyle == "1Story") %>%
+    select(Id, SecondFloorArea, HouseStyle, MSSubClass))
+
+id <- bind_rows(id, dataset %>%
+    filter(SecondFloorArea == 0, MSSubClass %in% c(45, 50, 60, 70, 75, 150, 160)) %>%
+    select(Id, SecondFloorArea, HouseStyle, MSSubClass))
+
+id <- bind_rows(id, dataset %>%
+    filter(SecondFloorArea > 0, MSSubClass %in% c(20, 30, 40, 120)) %>%
+    select(Id, SecondFloorArea, HouseStyle, MSSubClass))
+
+print(id)
+```
+
+
+3. The HouseStyle feature values must match with the values of the feature MSSubClass.
+
+To check this fact, we have to do a mapping between values of 'HouseStyle' and 'MSSubClass'. We have to be careful with 'SLvl' and 'SFoyer' because they can be used for all types. Since we are not sure about them, we will validate with values we know they mismatch.
 
 | HouseStyle | MSSubClass |
 | -----------| ---------- |
-| 1Story | 20 |
-| 1Story | 30 |
-| 1Story | 40 |
-| 1Story | 90 |
-| 1Story | 120 |
-| 1Story | 190 |
-| 1.5Fin | 50 |
-| 1.5Fin | 150 |
-| 1.5Unf | 45
-| 1.5Unf | 150 |
-| 2Story | 60 |
-| 2Story | 70 |
-| 2Story | 90 |
-| 2Story | 160 |
-| 2Story | 190 |
-| 2.5Fin | 75
-| 2.5Unf | 75
-| SFoyer | 85
-| SFoyer | 180 |
-| SLvl |   80 |
-| SLvl |   180 |
+| 1Story     |  20        |
+| 1Story     |  30        |
+| 1Story     |  40        |
+| 1Story     | 120        |
+| 1.5Fin     |  50        |
+| 1.5Unf     |  45        |
+| 2Story     |  60        |
+| 2Story     |  70        |
+| 2Story     | 160        |
+| 2.5Fin     |  75        |
+| 2.5Unf     |  75        |
+| SFoyer     |  85        |
+| SFoyer     | 180        |
+| SLvl       |  80        |
+| SLvl       | 180        |
 
 ```{r echo = TRUE, message = FALSE, warning = FALSE}
-sort(unique(dataset$MSSubClass[dataset$HouseStyle == "1Story"]))
-sort(unique(dataset$MSSubClass[dataset$HouseStyle == "1.5Fin"]))
-sort(unique(dataset$MSSubClass[dataset$HouseStyle == "1.5Unf"]))
-sort(unique(dataset$MSSubClass[dataset$HouseStyle == "2Story"]))
-sort(unique(dataset$MSSubClass[dataset$HouseStyle == "2.5Fin"]))
-sort(unique(dataset$MSSubClass[dataset$HouseStyle == "2.5Unf"]))
-sort(unique(dataset$MSSubClass[dataset$HouseStyle == "SFoyer"]))
-sort(unique(dataset$MSSubClass[dataset$HouseStyle == "SLvl"]))
+houses <- dataset %>%
+    filter(!(HouseStyle %in% c("SFoyer", "SLvl")))
 
+id <- houses %>%
+    filter(HouseStyle != "1Story", MSSubClass %in% c(20, 30, 40, 120)) %>%
+    select(Id, HouseStyle, MSSubClass)
 
-dataset$Id[dataset$SecondFlrSF > 0 & dataset$MSSubClass %in% c(20, 30, 40)]
-dataset$Id[dataset$SecondFlrSF > 0 & dataset$HouseStyle == "1Story"]
+id <- bind_rows(id, houses %>%
+    filter(HouseStyle != "1.5Fin", MSSubClass == 50) %>%
+    select(Id, HouseStyle, MSSubClass))
 
+id <- bind_rows(id, houses %>%
+    filter(HouseStyle != "1.5Unf", MSSubClass == 45) %>%
+    select(Id, HouseStyle, MSSubClass))
+
+id <- bind_rows(id, houses %>%
+    filter(HouseStyle != "2Story", MSSubClass %in% c(60, 70, 160)) %>%
+    select(Id, HouseStyle, MSSubClass))
+
+id <- bind_rows(id, houses %>%
+    filter(HouseStyle != "2.5Fin", MSSubClass == 75) %>%
+    select(Id, HouseStyle, MSSubClass))
+
+id <- bind_rows(id, houses %>%
+    filter(HouseStyle != "2.5Unf", MSSubClass == 75) %>%
+    select(Id, HouseStyle, MSSubClass))
+
+print(id)
 ```
 
 
+4. Per the code book, values of MSSubClass for 1 and 2 stories must match with the YearBuilt.
 
-For houses having a second floor, we have to check that the values of 'HouseStyle' are not '1Story'. We have `r length(dataset$HouseStyle[dataset$SecondFlrSF > 0 & dataset$HouseStyle == "1Story"])` houses with a second floor and having one story which is invalid. This is enough to prove that the fifth hypothesis is false. However, we need to identify these incoherences and check how many of them we will find to calculate the percentage of incoherent houses in this dataset.
+To verify this fact, we need to compare values of 'MSSubClass' with the 'YearBuilt' values. The fact is not respected if the year built is less than 1946 and values of 'MSSubClass' are 20, 60, 120 and 160. The case when the year built is 1946 and newer, and values of 'MSSubClass' are 30 and 70 also shows that the fact is not respected.
 ```{r echo = TRUE, message = FALSE, warning = FALSE}
-dataset$Id[dataset$SecondFlrSF > 0 & dataset$MSSubClass %in% c(20, 30, 40)]
-dataset$Id[dataset$SecondFlrSF > 0 & dataset$HouseStyle == "1Story"]
+id <- dataset %>% 
+    filter(YearBuilt < 1946, MSSubClass %in% c(20, 60, 120, 160)) %>%
+    select(Id, YearBuilt, MSSubClass)
+
+id <- bind_rows(id, dataset %>%
+    filter(YearBuilt >= 1946, MSSubClass %in% c(30, 70)) %>%
+    select(Id, YearBuilt, MSSubClass))
+
+print(id)
 ```
 
-To verify the sixth hypothesis, we need to compare values of 'MSSubClass' with the 'YearBuilt' values. The hypothesis is invalid if the year built is less than 1946 and values of 'MSSubClass' are 20, 60, and 160. The case when the year built is 1946 and newer, and values of 'MSSubClass' are 30, 70, and 120 also shows that the hypothesis is invalid.
+Even if we take the year where the house has been remodeled, we still have many houses with mismatches.
+
+
+5. If there is no garage with the house, then GarageType = NA, GarageYrBlt = NA, GarageFinish = NA, GarageCars = 0, GarageArea = 0, GarageQual = NA and GarageCond = NA.
+
+We need to get all houses where the GarageType is NA and check if the this fact's conditions are respected.
 ```{r echo = TRUE, message = FALSE, warning = FALSE}
-dataset$Id[dataset$YearBuilt < 1946 & dataset$MSSubClass %in% c(20, 60, 160)]
-dataset$Id[dataset$YearBuilt >= 1946 & dataset$MSSubClass %in% c(30, 70, 120)]
+garage.none <- dataset %>%
+    filter(is.na(GarageType))
+
+id <- garage.none %>% filter(!is.na(GarageYrBlt)) %>% select(Id)
+id <- bind_rows(id, garage.none %>% filter(!is.na(GarageFinish)) %>% select(Id))
+id <- bind_rows(id, garage.none %>% filter(GarageCars != 0) %>% select(Id))
+id <- bind_rows(id, garage.none %>% filter(GarageArea != 0) %>% select(Id))
+id <- bind_rows(id, garage.none %>% filter(!is.na(GarageQual)) %>% select(Id))
+id <- bind_rows(id, garage.none %>% filter(!is.na(GarageCond)) %>% select(Id))
+
+print(id)
 ```
 
-Even if we take the year where the house has been remodeled, we still have many houses with mismatches. Thus, the sixth hypothesis is invalid.
 
-We need to get all data where the GarageType is NA and check if the seventh hypothesis conditions are correct.
+6. If there is no basement in the house, then TotalBsmtSF = 0, BsmtUnfSF = 0, BsmtFinSF2 = 0, BsmtHalfBath = 0, BsmtFullBath = 0, BsmtQual = NA and BsmtCond = NA, BsmtExposure = NA, BsmtFinType1 = NA, BsmtFinSF1 = 0, BsmtFinType2 = NA.
+
+We need to get all houses where the TotalBsmtSF is 0 ft² and check if this fact's conditions are respected.
 ```{r echo = TRUE, message = FALSE, warning = FALSE}
-garage.none <- dataset[is.na(dataset$GarageType), ]
-garage.none$Id[!is.na(garage.none$GarageYrBlt)]
-garage.none$Id[!is.na(garage.none$GarageFinish)]
-garage.none$Id[garage.none$GarageCars != 0]
-garage.none$Id[garage.none$GarageArea != 0]
-garage.none$Id[!is.na(garage.none$GarageQual)]
-garage.none$Id[!is.na(garage.none$GarageCond)]
+basement.none <- dataset %>%
+    filter(TotalBsmtSF == 0)
+
+id <- basement.none %>% filter(BsmtUnfSF != 0) %>% select(Id)
+id <- bind_rows(id, basement.none %>% filter(BsmtFinSF1 != 0) %>% select(Id))
+id <- bind_rows(id, basement.none %>% filter(BsmtFinSF2 != 0) %>% select(Id))
+id <- bind_rows(id, basement.none %>% filter(BsmtHalfBath != 0, !is.na(BsmtHalfBath)) %>% select(Id))
+id <- bind_rows(id, basement.none %>% filter(BsmtFullBath != 0, !is.na(BsmtFullBath)) %>% select(Id))
+id <- bind_rows(id, basement.none %>% filter(!is.na(BsmtQual)) %>% select(Id))
+id <- bind_rows(id, basement.none %>% filter(!is.na(BsmtCond)) %>% select(Id))
+id <- bind_rows(id, basement.none %>% filter(!is.na(BsmtExposure)) %>% select(Id))
+id <- bind_rows(id, basement.none %>% filter(!is.na(BsmtFinType1)) %>% select(Id))
+id <- bind_rows(id, basement.none %>% filter(!is.na(BsmtFinType2)) %>% select(Id))
+
+print(id)
 ```
 
-Since the conditions are all respected, then the seventh hypothesis is valid.
 
-We need to get all data where the TotalBsmtSF is 0 ft² and check if the eighth hypothesis conditions are correct.
+7. Per the code book, if there are no fireplaces, then FireplaceQual = NA.
+
+We need to get all houses where the Fireplaces $\neq 0$ and check if the Fireplace Quality is NA.
 ```{r echo = TRUE, message = FALSE, warning = FALSE}
-basement.none <- dataset[dataset$TotalBsmtSF == 0, ]
-basement.none$Id[basement.none$BsmtUnfSF != 0]
-basement.none$Id[basement.none$BsmtFinSF2 != 0]
-basement.none$Id[basement.none$BsmtHalfBath != 0 & !is.na(basement.none$BsmtHalfBath)]
-basement.none$Id[basement.none$BsmtFullBath != 0 & !is.na(basement.none$BsmtFullBath)]
-basement.none$Id[basement.none$BsmtFinSF1 != 0]
-basement.none$Id[!is.na(basement.none$BsmtQual)]
-basement.none$Id[!is.na(basement.none$BsmtCond)]
-basement.none$Id[!is.na(basement.none$BsmtExposure)]
-basement.none$Id[!is.na(basement.none$BsmtFinType1)]
-basement.none$Id[!is.na(basement.none$BsmtFinType2)]
+dataset %>%
+    filter(Fireplaces != 0 & is.na(FireplaceQual)) %>%
+    select(Id, Fireplaces, FireplaceQual)
 ```
 
-Since the conditions are all respected, then the eighth hypothesis is valid.
 
-We need to get all data where the Fireplaces is 0 and check if the Fireplace Quality is NA.
+8. Per the code book, if there are no Pool, then PoolQualCond = NA.
+
+We need to get all houses where the PoolArea $\neq 0$ ft² and check if the Pool Quality is NA.
 ```{r echo = TRUE, message = FALSE, warning = FALSE}
-dataset$Id[dataset$Fireplaces != 0 & is.na(dataset$FireplaceQu)]
+dataset %>%
+    filter(PoolArea != 0 & is.na(PoolQualCond)) %>%
+    select(Id, PoolArea, PoolQualCond)
 ```
 
-Since the conditions are all respected, then the nineth hypothesis is valid.
 
-We need to get all data where the PoolArea is 0 ft² and check if the Pool Quality is NA.
+9. Per the code book, the Remodel year is the same as the year built if no remodeling or additions. Then, it is true to say that YearRemodAdd $\geq$ YearBuilt.
+
+The abnormal houses that are not respecting this fact are detected by filtering houses having the remodel year less than the year built.
 ```{r echo = TRUE, message = FALSE, warning = FALSE}
-dataset$Id[dataset$PoolArea != 0 & is.na(dataset$PoolQC)]
+dataset %>%
+    filter(YearRemodAdd < YearBuilt) %>%
+    select(Id, YearBuilt, YearRemodAdd)
 ```
 
-Since there are 3 pools, the conditions are not respected, then the tenth hypothesis is invalid.
+
+10. We verify that if the Garage Cars is 0, then the Garage Area is also 0. The converse is true since a Garage area of 0 means that there is no garage, thus no cars.
+
+```{r echo = TRUE, message = FALSE, warning = FALSE}
+dataset %>%
+    select(Id, GarageArea, GarageCars) %>%
+    filter(GarageArea == 0 & GarageCars > 0)
+```
+
+
+11. We have BsmtCond = NA (no basement per code book) if and only if BsmtQual = NA which means no basement per the code book.
+
+```{r echo = TRUE, message = FALSE, warning = FALSE}
+dataset %>%
+    filter(is.na(BsmtCond), !is.na(BsmtQual)) %>%
+    select(Id, BsmtCond, BsmtQual) 
+
+dataset %>%
+    filter(!is.na(BsmtCond), is.na(BsmtQual)) %>%
+    select(Id, BsmtCond, BsmtQual) 
+
+dataset <- dataset %>%
+    mutate(BsmtQual = replace(BsmtQual, !is.na(BsmtCond) & is.na(BsmtQual), BsmtCond)) %>%
+    mutate(BsmtCond = replace(BsmtCond, is.na(BsmtCond) & !is.na(BsmtQual), BsmtQual))
+```
+
+
+We define a house as being an anomaly if $\left\lVert Y - P \right\rVert > \epsilon$ where $Y = (x, y)$ is the point belonging to the regression linear model and $P = (x, z)$ a point not on the regression linear model. Also, $x$ is the ground living area, $y$ and $z$ the sale price, and $\epsilon > 0$ the threshold.
+
+Regarding the overall quality, the sale price and the ground living area, we expect that the sale price will increase when the overall quality increases and the ground living area increases. This is verified in the data exploratory section. 
+
+Taking houses having their overall quality = 10 and their ground living area greater than 4000 ft², the sale price should be part of the highest sale prices. If there are houses respecting these conditions with a sale price over 300000$ than what the regression model gives, then this may be possible, but if it is lower, than this is exceptionnel. 
+
+```{r echo = TRUE, message = FALSE, warning = FALSE}
+mod <- lm(formula = train$SalePrice ~ train$GrLivArea)
+
+anomalies <- train %>%
+    filter(OverallQual == 10, GrLivArea > 4000) %>%
+    select(Id, GrLivArea, SalePrice)
+print(anomalies)
+
+price.eq <- coef(mod)["(Intercept)"] + coef(mod)["train$GrLivArea"] * anomalies$GrLivArea
+prices <- data.frame(Id = anomalies$Id, 
+                     ApproxPrice = price.eq, 
+                     SalePrice = anomalies$SalePrice, 
+                     PriceDifference = abs(anomalies$SalePrice - price.eq))
+print(prices)
+ids <- prices$Id[prices$PriceDifference > 300000]
+
+dataset <- dataset %>%
+    filter(!(Id %in% ids))
+```
 
 
 ## Missing Values
 Per the code book of this dataset, we know that the NA values mean 'No' or 'None' and they are used only for categorical features. The other NA values that are not in the code book will be interpreted as if we do not have information for the house's feature. this goes also for the empty strings that will be replaced by NA. Thus, we will replace all of them by zero without losing any information.
 
-Also, we expect for numeric features that the value 0 means the same thing as a NA value. For example, a garage area of 0 means that there is no garage with this house. However, if the value 0 is used for an amount of money, then it is a real 0.
+Also, we expect for integer features that the value 0 means the same thing as a NA value. For example, a garage area of 0 means that there is no garage with this house. However, if the value 0 is used for an amount of money or for a geometric measure (e.g. area), then it is a real 0.
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+na.count <-sapply(dataset, function(feature) sum(length(which(is.na(feature)))))
+data.frame(NA_Count = na.count, 
+           Percentage = round(na.count / nrow(dataset) * 100, 2))
+```
+
+Some integer features like GarageCars and GarageArea have NA values. At the first glance, we cannot state that NA means 0 since 0 already has a meaning. It could be a "No Information", but looking at the GarageQual and GarageCond features, we notice that their value is NA as well. This means that this house has no garage per the code book. Therefore, we will replace NA values by 0 for GarageArea and GarageCars.
+
+For "year" features (e.g. GarageYrBlt), if the values are NA, then we can replace them by 0 without loss of generality. A year 0 is theorically possible, but in our context, it is impossible.
+
+For features like "BsmtFullBath", the value 0 means that we do not have full bathroom in the basement. Thus, we cannot replace NA by 0 if there is a basement. Otherwise, the house has no basement, thus no full bathroom in the basement. In this case only, we can replace NA by 0.
+
+Another case is when a feature has no description when the value NA is used. For example, the feature "KitchenQual" is not supposed to have the value NA per the code book. If the value NA is used, then it really means "No Information" and we cannot replace it by 0. Normally, we would exclude this house of the dataset, but this house is taken from the test set, thus we must not remove it. We can take the median which is "TA" for replacement, but this value is assumed, thus not necessary true. 
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+dataset <- dataset %>%
+    mutate(KitchenQual = replace(KitchenQual, which(is.na(KitchenQual)), "TA"))
+
+dataset %>%
+    filter(is.na(KitchenQual)) %>%
+    select(Id)
+
+train <- dataset[dataset$SalePrice > -1, ]
+test <- dataset[dataset$SalePrice == -1, ]
+```
+
+
+
+<!------------------------------------------------------------DATA EXPLORATORY------------------------------------------------------------------------------>
+
+
+
+# Data Exploratory
+The objective is to visualize and understand the relationships between features in the dataset we have to solve the problem. We will also compare changes we will make to this dataset to validate if they have significant influance on the sale price or not.
+
+A house buyer could be interested to know the following features about the house:
+
+* Area of the basement and the floors
+* Area of the garage and number of cars that can enter
+* The area of the house's land 
+* Is the house well rated?
 
 
 ## Features
@@ -333,7 +487,7 @@ Regarding the sale price, we note that some features are more than 60% correlate
 
 
 ## Sale Price
-The sale price should follow the normal distribution. However, we need to normalize the sale price by taking its logarithm.
+The sale price should follow the normal distribution. However, the sale price does not totally follow the normal law, thus we need to normalize the sale price by taking its logarithm.
 
 ```{r echo = FALSE, message = FALSE, warning = FALSE}
 plot.saleprice <- ggplot(train, aes(x = SalePrice)) + 
@@ -342,7 +496,7 @@ plot.saleprice <- ggplot(train, aes(x = SalePrice)) +
     ggtitle("Distribution of the Sale Price") + 
     labs(x = "Sale Price ($)")
 
-plot.logsaleprice <- ggplot(train, aes(x = log(SalePrice))) + 
+plot.logsaleprice <- ggplot(train, aes(x = log(SalePrice + 1))) + 
     geom_histogram(col = 'white') + 
     theme_light() + 
     ggtitle("Distribution of the log of Sale Price") + 
@@ -369,7 +523,6 @@ train %>%
         geom_line(aes(colour = "Right")) + 
         geom_line(aes(x = OverallQual, 
                       y = 939113/180*OverallQual*OverallQual - 2561483/180*OverallQual + 354979/6, 
-                      #y = 6699.55*OverallQual*OverallQual - 36934.98*OverallQual + 137983.01,
                       colour = "Approx.")) +
         ggtitle("Distribution of Average Sale Price in function of the overall quality rate") + 
         labs(y = "Average sale price ($)", x = "Overall Quality Rate") +
@@ -392,11 +545,17 @@ train %>%
         geom_smooth(method = "lm") +
         ggtitle("Distribution of Sale Price in function of the Grade Living Area") + 
         labs(x = "Grade Living Area (ft²)", y = "Sale Price ($)")
+
+ggplot(train, aes(x = log(GrLivArea + 1))) + 
+    geom_histogram(col = 'white') + 
+    theme_light() + 
+    ggtitle("Distribution of the GrLivArea") + 
+    labs(x = "log(GrLivArea + 1) (log(ft²))")
 ```
 
 
 ## Garage Cars
-We verify that if the Garage Cars is 0, then the Garage Area is also 0. The converse is true since a Garage area of 0 means that there is no garage.
+
 
 ```{r echo = FALSE, message = FALSE, warning = FALSE}
 train %>% 
@@ -410,15 +569,11 @@ train %>%
         geom_line() + 
         ggtitle("Distribution of Average Sale Price in function of the Garage Cars") + 
         labs(y = "Average sale price ($)", x = "Garage Cars")
-
-nrow(dataset %>%
-    select(GarageArea, GarageCars) %>%
-    filter(GarageArea == 0 & GarageCars > 0))
 ```
 
 
 ## Garage Area
-We precise that a garage area of 0 ft² means that there is no garage with the house.
+
 
 ```{r echo = FALSE, message = FALSE, warning = FALSE}
 train %>% 
@@ -428,11 +583,17 @@ train %>%
         geom_smooth(method = "lm") +
         ggtitle("Distribution of Average Sale Price in function of the Garage Area") + 
         labs(x = "Garage Area (ft²)", y = "Sale Price ($)")
+
+ggplot(train, aes(x = log(GarageArea + 1))) + 
+    geom_histogram(col = 'white') + 
+    theme_light() + 
+    ggtitle("Distribution of the log of Garage Area") + 
+    labs(x = "Log Garage Area (log$)")
 ```
 
 
 ## Total Basement Area
-We precise that a basement area of 0 ft² means that there is no basement in the house.
+
 
 ```{r echo = FALSE, message = FALSE, warning = FALSE}
 train %>% 
@@ -442,6 +603,12 @@ train %>%
         geom_smooth(method = "lm") +
         ggtitle("Distribution of Average Sale Price in function of the Total Basement Area") + 
         labs(x = "Total Basement Area (ft²)", y = "Sale Price ($)")
+
+ggplot(train, aes(x = log(TotalBsmtSF + 1))) + 
+    geom_histogram(col = 'white') + 
+    theme_light() + 
+    ggtitle("Distribution of the log of TotalBsmtSF") + 
+    labs(x = "Log TotalBsmtSF (log$)")
 ```
 
 
@@ -450,14 +617,18 @@ train %>%
 
 ```{r echo = FALSE, message = FALSE, warning = FALSE}
 train %>% 
-    select(FirstFlrSF, SalePrice) %>%
-    ggplot(aes(x = FirstFlrSF, y = SalePrice)) +
+    select(FirstFloorArea, SalePrice) %>%
+    ggplot(aes(x = FirstFloorArea, y = SalePrice)) +
         geom_point(stat = "identity") +
         geom_smooth(method = "lm") +
         ggtitle("Distribution of Average Sale Price in function of the First Floor Area") + 
         labs(x = "First Floor Area (ft²)", y = "Sale Price ($)")
 
-#dataset$MeanQuality <- (dataset$OverallQual + dataset$ExterQual + dataset$BsmtQual + dataset$HeatingQC + dataset$KitchenQual + dataset$FireplaceQu + dataset$GarageQual) / 7
+ggplot(train, aes(x = log(FirstFloorArea + 1))) + 
+    geom_histogram(col = 'white') + 
+    theme_light() + 
+    ggtitle("Distribution of the log of FirstFloorArea") + 
+    labs(x = "Log FirstFloorArea (log$)")
 ```
 
 
@@ -467,7 +638,17 @@ train %>%
 
 
 # Feature Selection
-In this section, we will use 2 methods to select features of our dataset. We will check which features are strongly correlated and remove them if the correlation coefficient is above a certain threshold (which will mean strongly correlated). Then, we will rank the features by importance by using the XGBoost algorithm to train the model and estimate the features importance.
+In this section, we will use 2 methods to select features of our dataset. We will check which features are strongly correlated and remove them if the correlation coefficient is above a certain threshold (which will mean strongly correlated). Then, we will rank the features by importance by using the Random Forest algorithm to train the model and estimate the features importance.
+
+
+## Dependant vs Independent Features
+With the current features we have in the dataset, we have to check which features are dependent of other features versus which ones are independent. At first glance in the dataset, features representing totals and overalls seems dependent.
+
+* $GrLivArea = FirstFloorArea + SecondFloorArea + LowQualFinSF$
+* $TotalBsmtSF = BsmtUnfSF + BsmtFinSF1 + BsmtFinSF2$
+
+
+
 
 ## Correlation
 
@@ -499,14 +680,11 @@ for(feature in features.string)
 
 dataset[is.na(dataset), ] <- 0
 
-train <- dataset[dataset$SalePrice > -1, ]
-test <- dataset[dataset$SalePrice == -1, ]
-
-sale.price <- train$SalePrice
-train$SalePrice <- NULL
 test.id <- test$Id
-test$Id <- NULL
-train$Id <- NULL
+dataset$Id <- NULL
+
+#train <- dataset[dataset$SalePrice > -1, ]
+#test <- dataset[dataset$SalePrice == -1, ]
 ```
 
 Now, we train the model with the random forest algorithm and rank features by importance using the recursive feature elimination method.
@@ -524,21 +702,19 @@ Now, we train the model with the random forest algorithm and rank features by im
 # # plot the results
 # plot(results, type = c("g", "o"))
 # # keep only the selected features
+
+# features.selected <- c("GrLivArea", "OverallQual", "TotalBsmtSF", "SecondFloorArea",
+# "FirstFloorArea",  "GarageCars", "YearBuilt", "BsmtFinSF1", 
+# "GarageArea",  "LotArea", "MSZoning", "ExterQual", 
+# "Neighborhood", "MSSubClass", "CentralAir", "FireplaceQual",
+# "Fireplaces",  "GarageYrBlt", "KitchenQual", "GarageType", 
+# "BsmtQual", "FullBath", "GarageFinish", "BldgType", 
+# "BsmtUnfSF", "HalfBath", "BedroomAbvGr", "BsmtFullBath",
+# "BsmtFinType1", "OpenPorchSF", "HeatingQualCond", "KitchenAbvGr",
+# "BsmtCond", "TotRmsAbvGrd", "GarageCond", "WoodDeckSF", 
+# "GarageQual", "Foundation")
 # dataset <- dataset %>%
 #     subset(select = c(features.selected, "SalePrice"))
-
-x <- c("GrLivArea", "OverallQual", "TotalBsmtSF", "SecondFlrSF",
-"FirstFlrSF",  "GarageCars", "YearBuilt", "BsmtFinSF1", 
-"GarageArea",  "LotArea", "MSZoning", "ExterQual",  
-"Neighborhood", "MSSubClass", "CentralAir", "FireplaceQu",
-"Fireplaces",  "GarageYrBlt", "KitchenQual", "GarageType", 
-"BsmtQual", "FullBath", "GarageFinish", "BldgType", 
-"BsmtUnfSF", "HalfBath", "BedroomAbvGr", "BsmtFullBath",
-"BsmtFinType1", "OpenPorchSF", "HeatingQC", "KitchenAbvGr",
-"BsmtCond", "TotRmsAbvGrd", "GarageCond", "WoodDeckSF", 
-"GarageQual", "Foundation", "SalePrice")
-dataset <- dataset %>%
-    subset(select = x)
 ```
 
 
@@ -548,18 +724,86 @@ dataset <- dataset %>%
 
 
 # Feature Engineering
-In this section, we create new features depending on the selected ones to help prediction.
+In this section, we create new features depending on the selected ones to help prediction. We also scale some features like the quality ones.
+
+
+## Feature Scaling
+Some features do not have the right scale. For example, the overall quality is rate from 1 to 10, but the other quality features have been transformed from 0 to 5. If $Q$ represents all quality features except the overall quality, then the scaling function will be $f(Q) = 2Q$ where $Q \in \{0, 1, 2, 3, 4, 5\}$. Thus, we obtain a scale from 0 to 10.
 
 ```{r echo = TRUE, message = FALSE, warning = FALSE}
-train <- dataset[dataset$SalePrice > -1, ]
-test <- dataset[dataset$SalePrice == -1, ]
+dataset$ExterQual <- dataset$ExterQual * 2
+dataset$FireplaceQual <- dataset$FireplaceQual * 2
+dataset$BsmtQual <- dataset$BsmtQual * 2
+dataset$KitchenQual <- dataset$KitchenQual * 2
+dataset$GarageQual <- dataset$GarageQual * 2
+dataset$HeatingQualCond <- dataset$HeatingQualCond * 2
+```
 
-train$SalePrice <- NULL
-test$SalePrice <- NULL
-gc()
+We apply the same scaling for the conditions except for PoolQC and HeatingQC which will use the function $f(Q) = 2.5Q$.
+
+```{r echo = TRUE, message = FALSE, warning = FALSE}
+dataset$BsmtCond <- dataset$BsmtCond * 2
+dataset$GarageCond <- dataset$GarageCond * 2
+dataset$ExterCond <- dataset$ExterCond * 2
+
+dataset$PoolQualCond <- dataset$PoolQualCond * 2.5
+dataset$HeatingQualCond <- dataset$HeatingQualCond * 2.5
+```
+
+All area features are given in square feet, thus no need to convert any of them. However, we need to scale all of them to ensure they follow the lognormal distribution. Thus, we will use the function $f(A) = \log{A + 1}$, where $A$ is the area and since the area can be 0 ft², then we add 1 to avoid $\log{0}$.
+
+```{r echo = TRUE, message = FALSE, warning = FALSE}
+#dataset$LotArea <- log(dataset$LotArea + 1)
+#dataset$GarageArea <- log(dataset$GarageArea + 1)
+#dataset$MasVnrArea <- log(dataset$MasVnrArea + 1)
+#dataset$BsmtFinSF2 <- log(dataset$BsmtFinSF2 + 1)
+#dataset$BsmtUnfSF <- log(dataset$BsmtUnfSF + 1)
+#dataset$TotalBsmtSF <- log(dataset$TotalBsmtSF + 1)
+#dataset$LowQualFinSF <- log(dataset$LowQualFinSF + 1)
+#dataset$FirstFloorArea <- log(dataset$FirstFloorArea + 1)
+#dataset$SecondFloorArea <- log(dataset$SecondFloorArea + 1)
+#dataset$GrLivArea <- log(dataset$GrLivArea + 1)
+#dataset$WoodDeckSF <- log(dataset$WoodDeckSF + 1)
+#dataset$OpenPorchSF <- log(dataset$OpenPorchSF + 1)
+#dataset$EnclosedPorch <- log(dataset$EnclosedPorch + 1)
+#dataset$ThreeSeasonPorchArea <- log(dataset$ThreeSeasonPorchArea + 1)
+#dataset$PoolArea <- log(dataset$PoolArea + 1)
+#dataset$ScreenPorch <- log(dataset$ScreenPorch + 1)
 ```
 
 
+## Feature Construction
+
+```{r echo = TRUE, message = FALSE, warning = FALSE}
+dataset <- dataset %>%
+    mutate(MeanQuality = (ExterQual + BsmtQual + HeatingQualCond + KitchenQual + 
+                          FireplaceQual + GarageQual + OverallQual) / 7) %>%
+    mutate(AgeAtSold = YrSold - YearBuilt) %>%
+    mutate(AgeRemodeled = YrSold - YearRemodAdd) %>%
+    mutate(AboveGroundBaths = FullBath + HalfBath) %>%
+    mutate(BasementBaths = BsmtFullBath + BsmtHalfBath) %>%
+    mutate(TotalBaths = FullBath + HalfBath + BsmtFullBath + BsmtHalfBath)
+
+
+
+
+train <- dataset[dataset$SalePrice != -1, ]
+test <- dataset[dataset$SalePrice == -1, ]
+
+sale.price <- train$SalePrice
+train$SalePrice <- NULL
+
+train <- data.matrix(train)
+test <- data.matrix(test)
+
+cat("Train set contains ", sum(train == 0L), " zeros.")
+cat("Test set contains ", sum(test == 0L), " zeros.")
+
+train <- Matrix(train, sparse = TRUE)
+test <- Matrix(test, sparse = TRUE)
+```
+
+TODO - Find noisy features
 
 <!------------------------------------------------------------MODELS BUILDING------------------------------------------------------------------------------>
 
@@ -578,17 +822,17 @@ We also display 2 curves indicating the test and train RMSE mean progression. Th
 
 ```{r echo = FALSE, message = FALSE, warning = FALSE}
 param <- list(objective        = "reg:linear",
-              eta              = 0.08,  
+              eta              = 0.05,  
               subsample        = 0.9,
               colsample_bytree = 0.8, 
               min_child_weight = 6,
               max_depth        = 7)
 
 cv.nfolds <- 10
-cv.nrounds <- 200
+cv.nrounds <- 400
 
 sale.price.log <- log(sale.price + 1)
-train.matrix <- xgb.DMatrix(data.matrix(train), label = sale.price.log)
+train.matrix <- xgb.DMatrix(train, label = sale.price.log)
 model.cv <- xgb.cv(data     = train.matrix, 
                    nfold    = cv.nfolds, 
                    param    = param,
@@ -625,7 +869,7 @@ model <- xgboost(param = param,
                  nrounds = nrounds,
                  verbose = 0)
 
-test.matrix <- xgb.DMatrix(data.matrix(test))
+test.matrix <- xgb.DMatrix(test)
 
 prediction.test <- exp(predict(model, test.matrix)) - 1
 prediction.train <- predict(model, train.matrix)
@@ -636,16 +880,16 @@ importance.matrix <- xgb.importance(names, model = model)
 print(importance.matrix)
 
 # Display the features importance.
-print(xgb.plot.importance(importance.matrix))
+print(xgb.plot.importance(importance.matrix[1:35]))
 ```
 
 
 ## Random Forest
 
-```{r echo = FALSE, message = FALSE, warning = FALSE}
-# rf.sale.price.log <- log(sale.price + 1)
+```{r echo = TRUE, message = FALSE, warning = FALSE}
+# sale.price.log <- log(sale.price + 1)
 # rf.model <- randomForest(x = train, 
-#                          y = rf.sale.price.log, 
+#                          y = sale.price.log, 
 #                          ntree = 150, 
 #                          do.trace = 5)
 # 
@@ -666,8 +910,8 @@ print(xgb.plot.importance(importance.matrix))
 #         las  = 2,
 #         cex.names = 0.7)
 # 
-# rf.prediction.test <- exp(predict(rf.model, test)) - 1
-# rf.prediction.train <- predict(rf.model, train)
+# prediction.test <- exp(predict(rf.model, test)) - 1
+# prediction.train <- predict(rf.model, train)
 ```
 
 
@@ -676,11 +920,19 @@ We can verify how our predictions score under the RMSE score. We take our predic
 
 ```{r echo = FALSE, message = FALSE, warning = FALSE}
 cat("RMSE =", RMSE(sale.price.log, as.numeric(prediction.train)))
+
+data.frame(predicted = exp(prediction.train) - 1,
+           observed = exp(sale.price.log) - 1) %>%
+  ggplot(aes(x = predicted, y = observed)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0) +
+  labs(title = "Predicted sale price in function of the observed sale price",
+       x = 'Observed sale price ($)', y = 'Predicted sale price ($)')
 ```
 
 
-# Results
-We write the 'activity_id' associated to the predicted outcome in the submission file.
+# Submission
+We write the 'Id' associated to the predicted SalePrice in the submission file.
 
 ```{r echo = TRUE, message = FALSE, warning = FALSE}
 submission <- data.frame(Id = test.id, SalePrice = prediction.test)
