@@ -2,13 +2,20 @@
 Gabriel Lapointe  
 September 18, 2016  
 
+# Objectives
+
+
+## Business Objective
+We have to answer this question: How do home features add up to its price tag?
+
+
+## Technical Objective
+With 79 explanatory variables describing (almost) every aspect of residential homes in Ames, Iowa, we have to predict the final price of each home.
+
+
 
 # Data Acquisition
-In this section, we specify the business problem to solve for this project. From the data source, we will ask questions on the dataset and establish a methodology to solve the problem.
-
-
-## Objective
-With 79 explanatory variables describing (almost) every aspect of residential homes in Ames, Iowa, we have to predict the final price of each home.
+In this section, we will ask questions on the dataset and establish a methodology to solve the problem.
 
 
 ## Data Source
@@ -32,7 +39,7 @@ Submissions are evaluated on Root-Mean-Squared-Error (RMSE) between the logarith
 
 
 ## Methodology
-In this document, we start by exploring the dataset and build the data story behind it. This will give us important insights which will answer our questions on this dataset. The next step is to proceed to feature engineering which consists to create, remove or replace features regarding insights we got when exploring the dataset. Then, we will peoceed to a features selection to know which features are strongly correlated to the outcome. We will ensure our new dataset is a valid input for each of our prediction models. We will fine-tune the model's parameters by cross-validating the model with the train set to get the optimal parameters. After applying our model to the test set, we will visualize the predictions calculated and explain the results. Finally, we will give our recommandations to fulfill the objective of this project.
+In this document, we start by cleaning and exploring the dataset to build the data story behind it. This will give us important insights which will answer our questions on this dataset. The next step is to proceed to feature engineering which consists to create, remove or replace features regarding insights we got when exploring the dataset. We will ensure our new dataset is a valid input for each of our prediction models. We will fine-tune the model's parameters by cross-validating the model with the train set to get the optimal parameters. After applying our model to the test set, we will visualize the predictions calculated and explain the results. Finally, we will conclude on most useful features to fulfill the business objective of this project.
 
 
 ## Loading Dataset
@@ -49,7 +56,8 @@ library(caret)
 library(corrplot)
 library(moments)         # For skewness
 library(Matrix)
-library(mice)            # To replace NA values by a predicted one
+#library(mice)            # To replace NA values by a predicted one
+library(Hmisc)           # To impute features having NA values to replace
 library(VIM)
 library(randomForest)
 library(xgboost)
@@ -71,23 +79,32 @@ opts_chunk$set(message = FALSE,
                warning = FALSE,
                comment = NA)
 
+'%nin%' <- Negate('%in%')
+
 ## Read csv files and ensure NA strings are converted to real NA.
-na.strings <- c("NA")
-train <- fread(input = "train.csv", 
-               showProgress = FALSE,
-               stringsAsFactors = FALSE, 
-               na.strings = na.strings, 
-               header = TRUE)
+system.time({
+    na.strings <- c("NA", "", " ")
+    train <- fread(input = "train.csv", 
+                   showProgress = FALSE,
+                   stringsAsFactors = FALSE, 
+                   na.strings = na.strings, 
+                   header = TRUE)
+    
+    test <- fread(input = "test.csv", 
+                  showProgress = FALSE,
+                  stringsAsFactors = FALSE, 
+                  na.strings = na.strings, 
+                  header = TRUE)
+    
+    ## Merge the train and test sets in a data.table object.
+    test$SalePrice <- -1
+    dataset <- rbindlist(list(train, test), use.names = TRUE)
+})
+```
 
-test <- fread(input = "test.csv", 
-              showProgress = FALSE,
-              stringsAsFactors = FALSE, 
-              na.strings = na.strings, 
-              header = TRUE)
-
-## Merge the train and test sets.
-test$SalePrice <- -1
-dataset <- rbind(train, test)
+```
+   user  system elapsed 
+  0.027   0.000   0.027 
 ```
 
 | Dataset            |  File Size (Kb) | # Houses              | # Features            |
@@ -104,7 +121,7 @@ These datasets are very small. Each observation (row) is a house where we want t
 
 
 # Dataset Cleaning
-The objective of this section is to detect all inconsistancies in the dataset and try to fix them all to gain as much accuracy as possible. We have to check if the dataset is valid with the possible values given in the code book. Thus, we need to ensure that there are no mispelled words or no values that are not in the code book. Also, all numerical values should be coherent with their description meaning that their bounds have to be logically correct. Regarding the code book, none of the categorical features have over 25 unique values. Then, we will compare the values mentioned in the code book with the values we have in the dataset. Finally, we have to detect anomalies and replace missing values with the most accurate ones.
+The objective of this section is to detect all inconsistancies in the dataset and try to fix them all to gain as much coherence and accuracy as possible. We have to check if the dataset is valid with the possible values given in the code book. Thus, we need to ensure that there are no mispelled words or no values that are not in the code book. Also, all numerical values should be coherent with their description meaning that their bounds have to be logically correct. Regarding the code book, none of the categorical features have over 25 unique values. Then, we will compare the values mentioned in the code book with the values we have in the dataset. Finally, we have to detect anomalies and determine techniques to replace missing values with the most accurate ones.
 
 
 ```
@@ -127,7 +144,7 @@ $Street
 [1] "Grvl, Pave"
 
 $Alley
-[1] ", Grvl, Pave, NA"
+[1] "Grvl, Pave, NA"
 
 $LotShape
 [1] "IR1, IR2, IR3, Reg"
@@ -325,13 +342,13 @@ $PoolArea
 [1] "0, 144, 228, 368, 444, 480, 512, 519, 555, 561, 576, 648, 738, 800"
 
 $PoolQC
-[1] ", Ex, Fa, Gd, NA"
+[1] "Ex, Fa, Gd, NA"
 
 $Fence
 [1] "GdPrv, GdWo, MnPrv, MnWw, NA"
 
 $MiscFeature
-[1] ", Gar2, Othr, Shed, TenC, NA"
+[1] "Gar2, Othr, Shed, TenC, NA"
 
 $MiscVal
 NULL
@@ -361,6 +378,7 @@ We start by harmonizing the feature names to be coherent with the code book. Com
 | MSZoning           | C (all)      | C |
 | MSZoning           | NA           | No corresponding value |
 | Alley              | Empty string | No corresponding value |
+| PoolQC             | Empty string | No corresponding value |
 | Utilities          | NA           | No corresponding value |
 | Neighborhood       | NAmes        | Names (should be NAmes) |
 | BldgType           | 2fmCon       | 2FmCon |
@@ -378,37 +396,28 @@ We start by harmonizing the feature names to be coherent with the code book. Com
 | Bedroom            | Named 'BedroomAbvGr' | Should be named 'BedroomAbvGr' to follow the naming convention |
 | Kitchen            | Named 'KitchenAbvGr' | Should be named 'KitchenAbvGr' to follow the naming convention |
 
-The code book seems to have a naming convention but is not always respected. Since we do not know the reason behind each code and each feature name given in this code book, we will not change any of them in code book. The changes will be done on the dataset only.
+The code book seems to have a naming convention but it is not always respected. Thus, it will be hard to achieve complete coherence. Since we do not know the reason behind each code and each feature name given, we will not change any of them in this code book. The changes will be done in the dataset only.
 
-To be coherent with the code book (assuming the code book is the truth), we will replace mispelled categories in the dataset by their corresponding one from the code book. Also, the empty strings and spaces will be replaced by NA since NA does not exist for these features. Note that we deduct that the string 'Twnhs' corresponds to the string 'TwnhsI' in the code book since the other codes can be easily associated.
+To be coherent with the code book (assuming the code book is the truth), we will replace mispelled categories in the dataset by their corresponding one from the code book. Note that we deduct that the string 'Twnhs' corresponds to the string 'TwnhsI' in the code book since the other codes can be easily associated.
 
 
 ```r
-## Replace all spaces or empty strings by NA.
-feature.emptystring <- c("Alley", "MiscFeature")
-dataset[, feature.emptystring] <- dataset %>%
-    select(Alley, MiscFeature) %>%
-    sapply(function(feature) gsub("^$|^ $", NA, feature))
+dataset <- dataset[MSZoning == "C (all)", MSZoning := "C"]
 
-dataset$MSZoning[dataset$MSZoning == "C (all)"] <- "C"
+dataset <- dataset[BldgType == "2fmCon", BldgType := "2FmCon"]
+dataset <- dataset[BldgType == "Duplex", BldgType := "Duplx"] 
+dataset <- dataset[BldgType == "Twnhs", BldgType := "TwnhsI"] 
 
-dataset$BldgType[dataset$BldgType == "2fmCon"] <- "2FmCon"
-dataset$BldgType[dataset$BldgType == "Duplex"] <- "Duplx"
-dataset$BldgType[dataset$BldgType == "Twnhs"] <- "TwnhsI"
-
-dataset$Exterior2nd[dataset$Exterior2nd == "Wd Shng"] <- "WdShing"
+dataset <- dataset[Exterior2nd == "Wd Shng", Exterior2nd := "WdShing"]
 ```
 
-Since we have feature names starting by a digit which is not allowed in many programming languages, we will rename them with their full name. We will also rename quality features having 'QC' or 'Qu' to keep coherence between names.
+Since we have feature names starting by a digit which is not allowed in many programming languages, we will rename them with their full name.
 
 
 ```r
-colnames(dataset)[colnames(dataset) == '1stFlrSF'] <- 'FirstFloorArea'
-colnames(dataset)[colnames(dataset) == '2ndFlrSF'] <- 'SecondFloorArea'
-colnames(dataset)[colnames(dataset) == '3SsnPorch'] <- 'ThreeSeasonPorchArea'
-colnames(dataset)[colnames(dataset) == 'HeatingQC'] <- 'HeatingQualCond'
-colnames(dataset)[colnames(dataset) == 'FireplaceQu'] <- 'FireplaceQual'
-colnames(dataset)[colnames(dataset) == 'PoolQC'] <- 'PoolQualCond'
+colnames(dataset)[colnames(dataset) == "1stFlrSF"] <- "FirstFloorArea"
+colnames(dataset)[colnames(dataset) == "2ndFlrSF"] <- "SecondFloorArea"
+colnames(dataset)[colnames(dataset) == "3SsnPorch"] <- "ThreeSeasonPorchArea"
 ```
 
 
@@ -421,51 +430,7 @@ We also need to check the logic in the dataset to make sure the data make sense.
 The minimum area of the first floor is 334 ft². Looking at features 'HouseStyle' and 'MSSubClass' in the code book, there is neither NA value nor another value indicating that there is no story in the house. Indeed, we have 0 NA values for 'HouseStyle' and 0 NA values for 'MSSubClass'.
 
 
-**2. It is possible to have a second floor area of 0 ft². This is equivalent to say that there is no second floor. Therefore, the number of stories must be 1. Note that a 1.5 story house has 2 levels thus 2 floors and then the second floor area is greater than 0 ft².**
-
-The minimum area of the second floor is 0 ft². Looking at the feature 'MSSubClass' in the code book, the codes 45, 50, 60, 70, 75, 150, 160 must not be used. For the feature 'HouseStyle', the codes '1Story', 'SFoyer' and 'SLvl' are the possible choices.
-
-
-```r
-id <- dataset %>%
-    filter(SecondFloorArea == 0, !(HouseStyle %in% c("1Story", "SFoyer", "SLvl"))) %>%
-    select(Id, SecondFloorArea, LowQualFinSF, HouseStyle, MSSubClass)
-
-id <- bind_rows(id, dataset %>%
-    filter(SecondFloorArea > 0, HouseStyle == "1Story") %>%
-    select(Id, SecondFloorArea, LowQualFinSF, HouseStyle, MSSubClass))
-
-id <- bind_rows(id, dataset %>%
-    filter(SecondFloorArea == 0, MSSubClass %in% c(45, 50, 60, 70, 75, 150, 160)) %>%
-    select(Id, SecondFloorArea, LowQualFinSF, HouseStyle, MSSubClass))
-
-id <- bind_rows(id, dataset %>%
-    filter(SecondFloorArea > 0, MSSubClass %in% c(20, 30, 40, 120)) %>%
-    select(Id, SecondFloorArea, LowQualFinSF, HouseStyle, MSSubClass))
-
-print(id)
-```
-
-```
-Source: local data frame [75 x 5]
-
-      Id SecondFloorArea LowQualFinSF HouseStyle MSSubClass
-   (int)           (int)        (int)      (chr)      (int)
-1     10               0            0     1.5Unf        190
-2     16               0            0     1.5Unf         45
-3     22               0            0     1.5Unf         45
-4     52               0          360     1.5Fin         50
-5     89               0          513     1.5Fin         50
-6    126               0          234     1.5Fin        190
-7    128               0            0     1.5Unf         45
-8    164               0            0     1.5Unf         45
-9    171               0          528     1.5Fin         50
-10   264               0          390     1.5Fin         50
-..   ...             ...          ...        ...        ...
-```
-
-
-**3. The HouseStyle feature values must match with the values of the feature MSSubClass.**
+**2. The HouseStyle feature values must match with the values of the feature MSSubClass.**
 
 To check this fact, we have to do a mapping between values of 'HouseStyle' and 'MSSubClass'. We have to be careful with 'SLvl' and 'SFoyer' because they can be used for all types. Since we are not sure about them, we will validate with values we know they mismatch.
 
@@ -488,37 +453,6 @@ To check this fact, we have to do a mapping between values of 'HouseStyle' and '
 | SLvl       | 180        |
 
 
-```r
-houses <- dataset %>%
-    filter(!(HouseStyle %in% c("SFoyer", "SLvl")))
-
-id <- houses %>%
-    filter(HouseStyle != "1Story", MSSubClass %in% c(20, 30, 40, 120)) %>%
-    select(Id, HouseStyle, BldgType, MSSubClass)
-
-id <- bind_rows(id, houses %>%
-    filter(HouseStyle != "1.5Fin", MSSubClass == 50) %>%
-    select(Id, HouseStyle, BldgType, MSSubClass))
-
-id <- bind_rows(id, houses %>%
-    filter(HouseStyle != "1.5Unf", MSSubClass == 45) %>%
-    select(Id, HouseStyle, BldgType, MSSubClass))
-
-id <- bind_rows(id, houses %>%
-    filter(HouseStyle != "2Story", MSSubClass %in% c(60, 70, 160)) %>%
-    select(Id, HouseStyle, BldgType, MSSubClass))
-
-id <- bind_rows(id, houses %>%
-    filter(HouseStyle != "2.5Fin", MSSubClass == 75) %>%
-    select(Id, HouseStyle, BldgType, MSSubClass))
-
-id <- bind_rows(id, houses %>%
-    filter(HouseStyle != "2.5Unf", MSSubClass == 75) %>%
-    select(Id, HouseStyle, BldgType, MSSubClass))
-
-print(id)
-```
-
 ```
 Source: local data frame [44 x 4]
 
@@ -538,9 +472,9 @@ Source: local data frame [44 x 4]
 ```
 
 
-**4. Per the code book, values of MSSubClass for 1 and 2 stories must match with the YearBuilt.**
+**3. Per the code book, values of MSSubClass for 1 and 2 stories must match with the YearBuilt.**
 
-To verify this fact, we need to compare values of 'MSSubClass' with the 'YearBuilt' values. The fact is not respected if the year built is less than 1946 and values of 'MSSubClass' are 20, 60, 120 and 160. The case when the year built is 1946 and newer and values of 'MSSubClass' are 30 and 70 also show that the fact is not respected.
+To verify this fact, we need to compare values of 'MSSubClass' with the 'YearBuilt' values. The fact is not respected if the year built is less than 1946 and values of 'MSSubClass' are 20, 60, 120 and 160. The case when the year built is 1946 and newer, and values of 'MSSubClass' are 30 and 70 also show that the fact is not respected.
 
 ```
 Source: local data frame [8 x 5]
@@ -557,65 +491,82 @@ Source: local data frame [8 x 5]
 8  2499      1958         30     1Fam     1Story
 ```
 
-We will make assumptions regarding the MSSubClass considering the house style and the year built. We know that a 2.5 story house cannot have a MSSubClass of 60. We also know that a MSSubClass set to 60 cannot have the year built older than 1946. Thus, we will assume that the code is 75 which corresponds to a 2.5 story house for all year built.
+These features represents  % of the dataset.
 
 
-
-
-**5. If there is no garage with the house, then GarageType = NA, GarageYrBlt = NA, GarageFinish = NA, GarageCars = 0, GarageArea = 0, GarageQual = NA and GarageCond = NA.**
+**4. If there is no garage with the house, then GarageType = NA, GarageYrBlt = NA, GarageFinish = NA, GarageCars = 0, GarageArea = 0, GarageQual = NA and GarageCond = NA.**
 
 We need to get all houses where the GarageType is NA and check if the this fact's conditions are respected.
 
 ```
-Source: local data frame [0 x 1]
-
-Variables not shown: Id (int)
+     Id GarageType GarageYrBlt GarageFinish GarageQual GarageCond
+1: 2127     Detchd          NA           NA         NA         NA
+2: 2577     Detchd          NA           NA         NA         NA
+   GarageArea GarageCars
+1:        360          1
+2:         NA         NA
 ```
 
 
-**6. If there is no basement in the house, then TotalBsmtSF = 0, BsmtUnfSF = 0, BsmtFinSF2 = 0, BsmtHalfBath = 0, BsmtFullBath = 0, BsmtQual = NA and BsmtCond = NA, BsmtExposure = NA, BsmtFinType1 = NA, BsmtFinSF1 = 0, BsmtFinType2 = NA.**
-
-We need to get all houses where the TotalBsmtSF is 0 ft² and check if this fact's conditions are respected.
-
-```
-Source: local data frame [0 x 1]
-
-Variables not shown: Id (int)
-```
-
-
-**7. Per the code book, if there are no fireplaces, then FireplaceQual = NA.**
-
-We need to get all houses where the Fireplaces $\neq 0$ and check if the Fireplace Quality is NA.
-
-```
-Empty data.table (0 rows) of 3 cols: Id,Fireplaces,FireplaceQual
-```
-
-
-**8. Per the code book, if there are no Pool, then PoolQualCond = NA.**
-
-We need to get all houses where the PoolArea $\neq 0$ ft² and check if the Pool Quality is NA. If there are houses, then we will replace NA values by the mean of the pool quality of all houses.
+**5. If there is no basement in the house, then TotalBsmtSF = 0, BsmtUnfSF = 0, BsmtFinSF2 = 0, BsmtHalfBath = 0, BsmtFullBath = 0, BsmtQual = NA and BsmtCond = NA, BsmtExposure = NA, BsmtFinType1 = NA, BsmtFinSF1 = 0, BsmtFinType2 = NA.**
 
 
 ```
-     Id PoolArea PoolQualCond
-1: 2421      368           NA
-2: 2504      444           NA
-3: 2600      561           NA
+     Id TotalBsmtSF BsmtUnfSF BsmtFinSF2 BsmtHalfBath BsmtFullBath
+1: 2041        1426         0        382            0            1
+2: 2121          NA        NA         NA           NA           NA
+3: 2186        1127        94          0            1            0
+4: 2189           0         0          0           NA           NA
+5: 2218         173       173          0            0            0
+6: 2219         356       356          0            0            0
+7: 2525         995       240          0            0            0
+   BsmtQual BsmtCond BsmtExposure BsmtFinType1 BsmtFinSF1 BsmtFinType2
+1:       Gd       NA           Mn          GLQ       1044          Rec
+2:       NA       NA           NA           NA         NA           NA
+3:       TA       NA           No          BLQ       1033          Unf
+4:       NA       NA           NA           NA          0           NA
+5:       NA       Fa           No          Unf          0          Unf
+6:       NA       TA           No          Unf          0          Unf
+7:       TA       NA           Av          ALQ        755          Unf
+```
+
+```
+     Id TotalBsmtSF BsmtUnfSF BsmtFinSF2 BsmtHalfBath BsmtFullBath
+1: 2189           0         0          0           NA           NA
+   BsmtQual BsmtCond BsmtExposure BsmtFinType1 BsmtFinSF1 BsmtFinType2
+1:       NA       NA           NA           NA          0           NA
+```
+
+
+**6. Per the code book, if there are no fireplaces, then FireplaceQu = NA and Fireplaces = 0.**
+
+
+```
+Empty data.table (0 rows) of 3 cols: Id,Fireplaces,FireplaceQu
+```
+
+```
+Empty data.table (0 rows) of 3 cols: Id,Fireplaces,FireplaceQu
+```
+
+
+**7. Per the code book, if there are no Pool, then PoolQC = NA and PoolArea = 0.**
+
+
+```
+     Id PoolArea PoolQC
+1: 2421      368     NA
+2: 2504      444     NA
+3: 2600      561     NA
+```
+
+```
+Empty data.table (0 rows) of 3 cols: Id,PoolArea,PoolQC
 ```
 
 
 
-```r
-PoolQualCond.mean <- getCategoryMean(dataset$PoolQualCond)
-
-dataset <- dataset %>%
-    mutate(PoolQualCond = replace(PoolQualCond, which(PoolArea != 0 & is.na(PoolQualCond)), PoolQualCond.mean))
-```
-
-
-**9. Per the code book, the Remodel year is the same as the year built if no remodeling or additions. Then, it is true to say that YearRemodAdd $\geq$ YearBuilt.**
+**8. Per the code book, the Remodel year is the same as the year built if no remodeling or additions. Then, it is true to say that YearRemodAdd $\geq$ YearBuilt.**
 
 The abnormal houses that are not respecting this fact are detected by filtering houses having the remodel year less than the year built. If it is the case, then we can verify the year when the garage was built if exists and compare with the house year built and remodeled. 
 
@@ -628,12 +579,11 @@ The abnormal houses that are not respecting this fact are detected by filtering 
 
 
 ```r
-dataset <- dataset %>%
-    mutate(YearRemodAdd = replace(YearRemodAdd, which(YearRemodAdd < YearBuilt), YearBuilt))
+dataset <- dataset[which(YearRemodAdd < YearBuilt), YearRemodAdd := YearBuilt]
 ```
 
 
-**10. We verify that if the Garage Cars is 0, then the Garage Area is also 0. The converse is true since a Garage area of 0 means that there is no garage, thus no cars.**
+**9. We verify that if the Garage Cars is 0, then the Garage Area is also 0. The converse is true since a Garage area of 0 means that there is no garage, thus no cars.**
 
 
 ```
@@ -641,7 +591,7 @@ Empty data.table (0 rows) of 3 cols: Id,GarageArea,GarageCars
 ```
 
 
-**11. We have BsmtCond = NA (no basement per code book) if and only if BsmtQual = NA which means no basement per the code book.**
+**10. We have BsmtCond = NA (no basement per code book) if and only if BsmtQual = NA which means no basement per the code book.**
 
 
 ```
@@ -660,13 +610,12 @@ Empty data.table (0 rows) of 3 cols: Id,GarageArea,GarageCars
 
 
 ```r
-dataset <- dataset %>%
-    mutate(BsmtQual = replace(BsmtQual, !is.na(BsmtCond) & is.na(BsmtQual), BsmtCond)) %>%
-    mutate(BsmtCond = replace(BsmtCond, is.na(BsmtCond) & !is.na(BsmtQual), BsmtQual))
+dataset <- dataset[which(!is.na(BsmtCond) & is.na(BsmtQual)), BsmtQual := BsmtCond]
+dataset <- dataset[which(is.na(BsmtCond) & !is.na(BsmtQual)), BsmtCond := BsmtQual]
 ```
 
 
-**12. We have MasVnrType = None if and only if MasVnrArea = 0 ft².**
+**11. We have MasVnrType = None if and only if MasVnrArea = 0 ft².**
 
 We have two cases where it is hard to check which one is right. 
 
@@ -695,41 +644,8 @@ We have two cases where it is hard to check which one is right.
 
 
 ```r
-MasVnrArea.threshold <- 10
-
-dataset <- dataset %>%
-    mutate(MasVnrType = replace(MasVnrType, MasVnrType != "None" & MasVnrArea == 0, "None")) %>%
-    mutate(MasVnrArea = replace(MasVnrArea, MasVnrType == "None" & MasVnrArea <= MasVnrArea.threshold, 0))
-
-MasVnrType.mean <- getCategoryMean(dataset$MasVnrType)
-dataset <- dataset %>%
-    mutate(MasVnrType = replace(MasVnrType, MasVnrType == "None" & MasVnrArea > MasVnrArea.threshold, MasVnrType.mean))
-```
-
-
-## Anomalies Detection
-
-We define a house as being an anomaly if $\left\lVert Y - P \right\rVert > \epsilon$ where $Y = (x, y)$ is the point belonging to the regression linear model and $P = (x, z)$ a point not on the regression linear model. Also, $x$ is the ground living area, $y$ and $z$ the sale price, and $\epsilon > 0$ the threshold.
-
-Regarding the overall quality, the sale price and the ground living area, we expect that the sale price will increase when the overall quality increases and the ground living area increases. This is verified in the data exploratory section. 
-
-Taking houses having their overall quality = 10 and their ground living area greater than 4000 ft², the sale price should be part of the highest sale prices. If there are houses respecting these conditions with a sale price over 240000$ than what the regression model gives, then this may be possible, but if it is lower, than this is exceptionnel. 
-
-
-```
-     Id GrLivArea SalePrice
-1:  524      4676    184750
-2:  692      4316    755000
-3: 1183      4476    745000
-4: 1299      5642    160000
-```
-
-```
-    Id ApproxPrice SalePrice PriceDifference
-1  524    519510.6    184750        334760.6
-2  692    480943.7    755000        274056.3
-3 1183    498084.5    745000        246915.5
-4 1299    622998.5    160000        462998.5
+dataset <- dataset[which(MasVnrType != "None" & MasVnrArea == 0), MasVnrType := "None"]
+dataset <- dataset[which(MasVnrType == "None" & MasVnrArea <= 10), MasVnrArea := 0]
 ```
 
 
@@ -743,25 +659,6 @@ Per the code book of this dataset, we know that generally, the NA values mean 'N
 * Case when a category is not NA where NA means 'No', and the numeric feature is NA where 0 has a clear meaning
 
 Features having NA values where NA means 'None' or 'No' will be replaced by 0.
-
-
-```r
-dataset <- dataset %>%
-    mutate(Alley = replace(Alley, is.na(Alley), 0)) %>%
-    mutate(BsmtQual = replace(BsmtQual, is.na(BsmtQual), 0)) %>%
-    mutate(BsmtCond = replace(BsmtCond, is.na(BsmtCond), 0)) %>%
-    mutate(BsmtExposure = replace(BsmtExposure, is.na(BsmtExposure), 0)) %>%
-    mutate(BsmtFinType1 = replace(BsmtFinType1, is.na(BsmtFinType1), 0)) %>%
-    mutate(BsmtFinType2 = replace(BsmtFinType2, is.na(BsmtFinType2), 0)) %>%
-    mutate(FireplaceQual = replace(FireplaceQual, is.na(FireplaceQual), 0)) %>%
-    mutate(GarageType = replace(GarageType, is.na(GarageType), 0)) %>%
-    mutate(GarageFinish = replace(GarageFinish, is.na(GarageFinish), 0)) %>%
-    mutate(GarageQual = replace(GarageQual, is.na(GarageQual), 0)) %>%
-    mutate(GarageCond = replace(GarageCond, is.na(GarageCond), 0)) %>%
-    mutate(PoolQualCond = replace(PoolQualCond, is.na(PoolQualCond), 0)) %>%
-    mutate(Fence = replace(Fence, is.na(Fence), 0)) %>%
-    mutate(MiscFeature = replace(MiscFeature, is.na(MiscFeature), 0))
-```
 
 However, it is possible to solve some NA values by analysing the value used for other features strongly related. For example, some integer features like GarageCars and GarageArea have NA values. At the first glance, we cannot state that NA means 0 since 0 already has a meaning. It could be a "No Information", but looking at the GarageQual and GarageCond features, we notice that their value is NA as well. This means that this house has no garage per the code book. Therefore, we will replace NA values by 0 for GarageArea and GarageCars.
 
@@ -782,7 +679,7 @@ For those cases, we need to use imputation on missing data (NA value). We could 
          LotFrontage              LotArea               Street 
                  486                    0                    0 
                Alley             LotShape          LandContour 
-                   0                    0                    0 
+                2721                    0                    0 
            Utilities            LotConfig            LandSlope 
                    2                    0                    0 
         Neighborhood           Condition1           Condition2 
@@ -798,72 +695,85 @@ For those cases, we need to use imputation on missing data (NA value). We could 
            ExterQual            ExterCond           Foundation 
                    0                    0                    0 
             BsmtQual             BsmtCond         BsmtExposure 
-                   0                    0                    0 
+                  79                   79                   82 
         BsmtFinType1           BsmtFinSF1         BsmtFinType2 
-                   0                    1                    0 
+                  79                    1                   80 
           BsmtFinSF2            BsmtUnfSF          TotalBsmtSF 
                    1                    1                    1 
-             Heating      HeatingQualCond           CentralAir 
+             Heating            HeatingQC           CentralAir 
                    0                    0                    0 
           Electrical       FirstFloorArea      SecondFloorArea 
                    1                    0                    0 
         LowQualFinSF            GrLivArea         BsmtFullBath 
-                   0                    0                    2 
+                   0                    0                    1 
         BsmtHalfBath             FullBath             HalfBath 
-                   2                    0                    0 
+                   1                    0                    0 
         BedroomAbvGr         KitchenAbvGr          KitchenQual 
                    0                    0                    1 
         TotRmsAbvGrd           Functional           Fireplaces 
                    0                    2                    0 
-       FireplaceQual           GarageType          GarageYrBlt 
-                   0                    0                  159 
+         FireplaceQu           GarageType          GarageYrBlt 
+                1420                  158                  159 
         GarageFinish           GarageCars           GarageArea 
-                   0                    1                    1 
+                 159                    1                    1 
           GarageQual           GarageCond           PavedDrive 
-                   0                    0                    0 
+                 159                  159                    0 
           WoodDeckSF          OpenPorchSF        EnclosedPorch 
                    0                    0                    0 
 ThreeSeasonPorchArea          ScreenPorch             PoolArea 
                    0                    0                    0 
-        PoolQualCond                Fence          MiscFeature 
-                   0                    0                    0 
+              PoolQC                Fence          MiscFeature 
+                2909                 2348                 2814 
              MiscVal               MoSold               YrSold 
                    0                    0                    0 
             SaleType        SaleCondition            SalePrice 
                    1                    0                    0 
 ```
 
-![](Analysis_files/figure-html/unnamed-chunk-23-1.png)<!-- -->
+![](Analysis_files/figure-html/unnamed-chunk-18-1.png)<!-- -->
 
 ```
 
  Variables sorted by number of missings: 
              Variable        Count
-          LotFrontage 0.1667238422
-          GarageYrBlt 0.0545454545
-           MasVnrType 0.0082332762
-           MasVnrArea 0.0078902230
-             MSZoning 0.0013722127
-            Utilities 0.0006861063
-         BsmtFullBath 0.0006861063
-         BsmtHalfBath 0.0006861063
-           Functional 0.0006861063
-          Exterior1st 0.0003430532
-          Exterior2nd 0.0003430532
-           BsmtFinSF1 0.0003430532
-           BsmtFinSF2 0.0003430532
-            BsmtUnfSF 0.0003430532
-          TotalBsmtSF 0.0003430532
-           Electrical 0.0003430532
-          KitchenQual 0.0003430532
-           GarageCars 0.0003430532
-           GarageArea 0.0003430532
-             SaleType 0.0003430532
+               PoolQC 0.9965741692
+          MiscFeature 0.9640287770
+                Alley 0.9321685509
+                Fence 0.8043850634
+          FireplaceQu 0.4864679685
+          LotFrontage 0.1664953751
+          GarageYrBlt 0.0544707091
+         GarageFinish 0.0544707091
+           GarageQual 0.0544707091
+           GarageCond 0.0544707091
+           GarageType 0.0541281261
+         BsmtExposure 0.0280918123
+         BsmtFinType2 0.0274066461
+             BsmtQual 0.0270640630
+             BsmtCond 0.0270640630
+         BsmtFinType1 0.0270640630
+           MasVnrType 0.0082219938
+           MasVnrArea 0.0078794108
+             MSZoning 0.0013703323
+            Utilities 0.0006851662
+           Functional 0.0006851662
+          Exterior1st 0.0003425831
+          Exterior2nd 0.0003425831
+           BsmtFinSF1 0.0003425831
+           BsmtFinSF2 0.0003425831
+            BsmtUnfSF 0.0003425831
+          TotalBsmtSF 0.0003425831
+           Electrical 0.0003425831
+         BsmtFullBath 0.0003425831
+         BsmtHalfBath 0.0003425831
+          KitchenQual 0.0003425831
+           GarageCars 0.0003425831
+           GarageArea 0.0003425831
+             SaleType 0.0003425831
                    Id 0.0000000000
            MSSubClass 0.0000000000
               LotArea 0.0000000000
                Street 0.0000000000
-                Alley 0.0000000000
              LotShape 0.0000000000
           LandContour 0.0000000000
             LotConfig 0.0000000000
@@ -882,13 +792,8 @@ ThreeSeasonPorchArea          ScreenPorch             PoolArea
             ExterQual 0.0000000000
             ExterCond 0.0000000000
            Foundation 0.0000000000
-             BsmtQual 0.0000000000
-             BsmtCond 0.0000000000
-         BsmtExposure 0.0000000000
-         BsmtFinType1 0.0000000000
-         BsmtFinType2 0.0000000000
               Heating 0.0000000000
-      HeatingQualCond 0.0000000000
+            HeatingQC 0.0000000000
            CentralAir 0.0000000000
        FirstFloorArea 0.0000000000
       SecondFloorArea 0.0000000000
@@ -900,11 +805,6 @@ ThreeSeasonPorchArea          ScreenPorch             PoolArea
          KitchenAbvGr 0.0000000000
          TotRmsAbvGrd 0.0000000000
            Fireplaces 0.0000000000
-        FireplaceQual 0.0000000000
-           GarageType 0.0000000000
-         GarageFinish 0.0000000000
-           GarageQual 0.0000000000
-           GarageCond 0.0000000000
            PavedDrive 0.0000000000
            WoodDeckSF 0.0000000000
           OpenPorchSF 0.0000000000
@@ -912,9 +812,6 @@ ThreeSeasonPorchArea          ScreenPorch             PoolArea
  ThreeSeasonPorchArea 0.0000000000
           ScreenPorch 0.0000000000
              PoolArea 0.0000000000
-         PoolQualCond 0.0000000000
-                Fence 0.0000000000
-          MiscFeature 0.0000000000
               MiscVal 0.0000000000
                MoSold 0.0000000000
                YrSold 0.0000000000
@@ -924,7 +821,52 @@ ThreeSeasonPorchArea          ScreenPorch             PoolArea
 
 For the Masonry veneer type (MasVnrType) feature, the value "None" means that the house does not have a masonry veneer per the code book. If some houses have the value NA, then it will mean that the information is missing. 
 
-Note that it is possible to have information on the masonry veneer area but not on the type (vice-versa could be possible as well). In that case, we cannot deduct what will be the value to replace NA. We cannot replace NA by 0 for the area because 0 means *None* which is a valid choice. The best choice we can take is to replace NA value by the mean value of the feature.
+Note that it is possible to have information on the masonry veneer area but not on the type (vice-versa could be possible as well). In that case, we cannot deduct with certainty what will be the value to replace NA. We cannot replace NA by 0 for the area because 0 means *None* which is a valid choice. The best choice we can take is to replace NA value by the mean value of the feature.
+
+
+
+<!------------------------------------------------------------ANOMALIES DETECTION------------------------------------------------------------------------------>
+
+
+
+# Anomalies Detection
+In this section, the objective is to detect houses or features having wrong or illogic information. We will fix them if it is possible.
+
+We define a house as being an anomaly if $\left\lVert Y - P \right\rVert > \epsilon$ where $Y = (x, y)$ is the point belonging to the regression linear model and $P = (x, z)$ a point not on the regression linear model. Also, $x$ is the ground living area, $y$ and $z$ the sale price, and $\epsilon > 0$ the threshold.
+
+Regarding the overall quality, the sale price and the ground living area, we expect that the sale price will increase when the overall quality increases and the ground living area increases. This is verified in the data exploratory section. 
+
+Taking houses having their overall quality = 10 and their ground living area greater than 4000 ft², the sale price should be part of the highest sale prices. If there are houses respecting these conditions with a sale price over 240000$ than what the regression model gives, then this may be possible, but if it is lower, than this is exceptionnel. 
+
+
+```
+     Id GrLivArea SalePrice
+1:  524      4676    184750
+2:  692      4316    755000
+3: 1183      4476    745000
+4: 1299      5642    160000
+```
+
+```
+     Id ApproxPrice SalePrice PriceDifference
+1:  524    519510.6    184750        334760.6
+2:  692    480943.7    755000        274056.3
+3: 1183    498084.5    745000        246915.5
+4: 1299    622998.5    160000        462998.5
+```
+
+After visualizing, we detected another anomaly concerning the garage year built. Since the year cannot be greater than 2010, years greater than that year will be treated as an anomaly.
+
+
+```
+     Id GarageYrBlt YearBuilt YrSold
+1: 2593        2207      2006   2007
+```
+
+
+```r
+dataset <- dataset[GarageYrBlt > max(YrSold), GarageYrBlt := YrSold]
+```
 
 
 
@@ -948,7 +890,7 @@ Classes 'data.table' and 'data.frame':	2915 obs. of  81 variables:
  $ LotFrontage         : int  65 80 68 60 84 85 75 NA 51 50 ...
  $ LotArea             : int  8450 9600 11250 9550 14260 14115 10084 10382 6120 7420 ...
  $ Street              : chr  "Pave" "Pave" "Pave" "Pave" ...
- $ Alley               : chr  "0" "0" "0" "0" ...
+ $ Alley               : chr  NA NA NA NA ...
  $ LotShape            : chr  "Reg" "Reg" "IR1" "IR1" ...
  $ LandContour         : chr  "Lvl" "Lvl" "Lvl" "Lvl" ...
  $ Utilities           : chr  "AllPub" "AllPub" "AllPub" "AllPub" ...
@@ -968,7 +910,7 @@ Classes 'data.table' and 'data.frame':	2915 obs. of  81 variables:
  $ Exterior1st         : chr  "VinylSd" "MetalSd" "VinylSd" "Wd Sdng" ...
  $ Exterior2nd         : chr  "VinylSd" "MetalSd" "VinylSd" "WdShing" ...
  $ MasVnrType          : chr  "BrkFace" "None" "BrkFace" "None" ...
- $ MasVnrArea          : num  196 0 162 0 350 0 186 240 0 0 ...
+ $ MasVnrArea          : int  196 0 162 0 350 0 186 240 0 0 ...
  $ ExterQual           : chr  "Gd" "TA" "Gd" "TA" ...
  $ ExterCond           : chr  "TA" "TA" "TA" "TA" ...
  $ Foundation          : chr  "PConc" "CBlock" "PConc" "BrkTil" ...
@@ -982,7 +924,7 @@ Classes 'data.table' and 'data.frame':	2915 obs. of  81 variables:
  $ BsmtUnfSF           : int  150 284 434 540 490 64 317 216 952 140 ...
  $ TotalBsmtSF         : int  856 1262 920 756 1145 796 1686 1107 952 991 ...
  $ Heating             : chr  "GasA" "GasA" "GasA" "GasA" ...
- $ HeatingQualCond     : chr  "Ex" "Ex" "Ex" "Gd" ...
+ $ HeatingQC           : chr  "Ex" "Ex" "Ex" "Gd" ...
  $ CentralAir          : chr  "Y" "Y" "Y" "Y" ...
  $ Electrical          : chr  "SBrkr" "SBrkr" "SBrkr" "SBrkr" ...
  $ FirstFloorArea      : int  856 1262 920 961 1145 796 1694 1107 1022 1077 ...
@@ -999,7 +941,7 @@ Classes 'data.table' and 'data.frame':	2915 obs. of  81 variables:
  $ TotRmsAbvGrd        : int  8 6 6 7 9 5 7 7 8 5 ...
  $ Functional          : chr  "Typ" "Typ" "Typ" "Typ" ...
  $ Fireplaces          : int  0 1 1 1 1 0 1 2 2 2 ...
- $ FireplaceQual       : chr  "0" "TA" "TA" "Gd" ...
+ $ FireplaceQu         : chr  NA "TA" "TA" "Gd" ...
  $ GarageType          : chr  "Attchd" "Attchd" "Attchd" "Detchd" ...
  $ GarageYrBlt         : int  2003 1976 2001 1998 2000 1993 2004 1973 1931 1939 ...
  $ GarageFinish        : chr  "RFn" "RFn" "RFn" "Unf" ...
@@ -1014,9 +956,9 @@ Classes 'data.table' and 'data.frame':	2915 obs. of  81 variables:
  $ ThreeSeasonPorchArea: int  0 0 0 0 0 320 0 0 0 0 ...
  $ ScreenPorch         : int  0 0 0 0 0 0 0 0 0 0 ...
  $ PoolArea            : int  0 0 0 0 0 0 0 0 0 0 ...
- $ PoolQualCond        : chr  "" "" "" "" ...
- $ Fence               : chr  "0" "0" "0" "0" ...
- $ MiscFeature         : chr  "0" "0" "0" "0" ...
+ $ PoolQC              : chr  NA NA NA NA ...
+ $ Fence               : chr  NA NA NA NA ...
+ $ MiscFeature         : chr  NA NA NA NA ...
  $ MiscVal             : int  0 0 0 0 0 700 0 350 0 0 ...
  $ MoSold              : int  2 5 9 2 12 10 8 11 4 1 ...
  $ YrSold              : int  2008 2007 2008 2006 2008 2009 2007 2009 2008 2008 ...
@@ -1028,7 +970,7 @@ Classes 'data.table' and 'data.frame':	2915 obs. of  81 variables:
 
 We see now a plot of the correlation between numeric features of the train set.
 
-![](Analysis_files/figure-html/unnamed-chunk-25-1.png)<!-- -->
+![](Analysis_files/figure-html/unnamed-chunk-23-1.png)<!-- -->
 
 ```
                 SalePriceCorrelation
@@ -1061,11 +1003,11 @@ OverallCond              -0.12941377
 EnclosedPorch            -0.15728895
 ```
 
-Regarding the sale price, we note that some features are more than 60% correlated with the sale price. We will produce plots for each of them to get insights.
+We note that some features are strongly correlated with the sale price or other features. We will produce plots for each of them to get insights.
 
 
 ## Dependant vs Independent Features
-With the current features we have in the dataset, we have to check which features are dependent of other features versus which ones are independent. At first glance in the dataset, features representing totals and overalls seems dependent.
+With the current features in this dataset, we have to check which features are dependent of other features versus which ones are independent. At first glance in the dataset, features representing totals and overalls seems dependent.
 
 * $GrLivArea = FirstFloorArea + SecondFloorArea + LowQualFinSF$
 * $TotalBsmtSF = BsmtUnfSF + BsmtFinSF1 + BsmtFinSF2$
@@ -1074,7 +1016,7 @@ With the current features we have in the dataset, we have to check which feature
 ## Sale Price
 The sale price should follow the normal distribution. However, the sale price does not totally follow the normal law, thus we need to normalize the sale price by taking its logarithm.
 
-![](Analysis_files/figure-html/unnamed-chunk-26-1.png)<!-- -->
+![](Analysis_files/figure-html/unnamed-chunk-24-1.png)<!-- -->
 
 ```
    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
@@ -1087,31 +1029,47 @@ The overall quality rate is the most correlated feature to the sale price as see
 
 
 ```
-Source: local data table [10 x 2]
-
-   OverallQual MeanSalePrice
-         (int)         (dbl)
-1            1      50150.00
-2            2      51770.33
-3            3      87473.75
-4            4     108420.66
-5            5     133523.35
-6            6     161603.03
-7            7     207716.42
-8            8     274735.54
-9            9     367513.02
-10          10     432131.50
+    OverallQual MeanSalePrice
+ 1:           1      50150.00
+ 2:           2      51770.33
+ 3:           3      87473.75
+ 4:           4     108420.66
+ 5:           5     133523.35
+ 6:           6     161603.03
+ 7:           7     207716.42
+ 8:           8     274735.54
+ 9:           9     367513.02
+10:          10     432131.50
 ```
 
+![](Analysis_files/figure-html/unnamed-chunk-25-1.png)<!-- -->
+
+Note that the equation used to approximate is a parabola where the equation has been built from 3 points (OverallQual, MeanSalePrice) where the overall quality rates chosen are 1, 6 and 10 with their corresponding average sale price. The equation used to approximate the polyline is $M(Q) = \dfrac{939113}{180}Q^2-\dfrac{2561483}{180}Q+\dfrac{354979}{6}$ where $Q$ is the overall quality rate and $M(Q)$ is the mean sale price in function of $Q$.
+
+Here is a frequencies' table and a histogram representing these frequencies.
+
+
+```
+   Freq Cumul    Relative
+1     4     4 0.001372213
+2    13    17 0.004459691
+3    40    57 0.013722127
+4   226   283 0.077530017
+5   825  1108 0.283018868
+6   731  1839 0.250771870
+7   600  2439 0.205831904
+8   342  2781 0.117324185
+9   107  2888 0.036706690
+10   27  2915 0.009262436
+```
+
+![](Analysis_files/figure-html/unnamed-chunk-26-1.png)<!-- -->
+
+
+## Above Ground Living Area
+This feature is the second most correlated with the sale price per the correlation plot.
+
 ![](Analysis_files/figure-html/unnamed-chunk-27-1.png)<!-- -->
-
-Note that the equation used to approximate is a parabola where the equation has been built from 3 points (OverallQual, MeanSalePrice) where the overall quality rates chosen are 1, 6 and 10 with their corresponding average sale price. The equation used to approximate is $M(Q) = \dfrac{939113}{180}Q^2-\dfrac{2561483}{180}Q+\dfrac{354979}{6}$ where $Q$ is the overall quality rate and $M(Q)$ is the mean sale price in function of $Q$.
-
-
-## Above grade (ground) living area
-
-
-![](Analysis_files/figure-html/unnamed-chunk-28-1.png)<!-- -->![](Analysis_files/figure-html/unnamed-chunk-28-2.png)<!-- -->
 
 
 ## Garage Cars
@@ -1119,46 +1077,88 @@ Note that the equation used to approximate is a parabola where the equation has 
 
 
 ```
-Source: local data table [5 x 2]
-
-  GarageCars MeanSalePrice
-       (int)         (dbl)
-1          0      103317.3
-2          1      128116.7
-3          2      183880.6
-4          3      305389.8
-5          4      192655.8
+   GarageCars MinGarageArea MeanGarageArea MaxGarageArea MeanSalePrice
+1:          0             0         0.0000             0      103317.3
+2:          1           160       300.5176           924      128116.7
+3:          2           320       518.7060           924      183880.6
+4:          3           478       811.0449          1390      305389.8
+5:          4           480       890.4000          1356      192655.8
 ```
 
-![](Analysis_files/figure-html/unnamed-chunk-29-1.png)<!-- -->
+![](Analysis_files/figure-html/unnamed-chunk-28-1.png)<!-- -->
+
+Here is the list of houses having a garage that can contain more than 3 cars in the dataset.
 
 
 ```
-     Id OverallQual GrLivArea SalePrice
-1:  421           7      1344    206300
-2:  748           7      2640    265979
-3: 1191           4      1622    168000
-4: 1341           4       872    123000
-5: 1351           5      2634    200000
+      Id OverallQual GarageCars GarageArea SalePrice
+ 1:  421           7          4        784    206300
+ 2:  748           7          4        864    265979
+ 3: 1191           4          4       1356    168000
+ 4: 1341           4          4        480    123000
+ 5: 1351           5          4        968    200000
+ 6: 1576           6          4       1017        -1
+ 7: 1829           5          5       1184        -1
+ 8: 1862           7          4        820        -1
+ 9: 1863           7          4        820        -1
+10: 1864           7          4        820        -1
+11: 1956           7          4       1314        -1
+12: 1971          10          4       1150        -1
+13: 2072           5          4       1488        -1
+14: 2238           7          4        784        -1
+15: 2600           3          4       1041        -1
+16: 2829           6          4        920        -1
+17: 2906           7          4        784        -1
 ```
 
 
 ## Garage Area
 
 
-![](Analysis_files/figure-html/unnamed-chunk-31-1.png)<!-- -->![](Analysis_files/figure-html/unnamed-chunk-31-2.png)<!-- -->
+![](Analysis_files/figure-html/unnamed-chunk-30-1.png)<!-- -->
 
 
 ## Total Basement Area
 
 
-![](Analysis_files/figure-html/unnamed-chunk-32-1.png)<!-- -->![](Analysis_files/figure-html/unnamed-chunk-32-2.png)<!-- -->
+![](Analysis_files/figure-html/unnamed-chunk-31-1.png)<!-- -->
 
 
 ## First Floor Area
 
 
-![](Analysis_files/figure-html/unnamed-chunk-33-1.png)<!-- -->![](Analysis_files/figure-html/unnamed-chunk-33-2.png)<!-- -->
+![](Analysis_files/figure-html/unnamed-chunk-32-1.png)<!-- -->
+
+
+## Year Built
+We compare the house year built and the garage year built.
+
+![](Analysis_files/figure-html/unnamed-chunk-33-1.png)<!-- -->
+
+We can see that few houses have been built many years after the garage. We can think of a garage / workshop and then, the workshop has been converted to a garage many years after to build a house with this garage.  
+
+
+```
+      Id GarageYrBlt YearBuilt GarageType
+ 1:   30        1920      1927     Detchd
+ 2:   94        1900      1910     Detchd
+ 3:  325        1961      1967    BuiltIn
+ 4:  601        2003      2005    BuiltIn
+ 5:  737        1949      1950     Detchd
+ 6: 1104        1954      1959    BuiltIn
+ 7: 1377        1925      1930     Detchd
+ 8: 1415        1922      1923     Detchd
+ 9: 1419        1962      1963     Detchd
+10: 1522        1956      1959     Attchd
+11: 1577        2009      2010     Attchd
+12: 1806        1920      1935     Detchd
+13: 1841        1960      1978     Detchd
+14: 1896        1940      1941     Detchd
+15: 1898        1926      1935     Detchd
+16: 2123        1925      1945     Attchd
+17: 2264        2005      2006     Attchd
+18: 2510        2005      2006     Attchd
+```
 
 
 
@@ -1167,84 +1167,126 @@ Source: local data table [5 x 2]
 
 
 # Feature Engineering
-In this section, we create, modify and delete features to help the prediction. We will impute missing values not yet resolved using the MICE package. We also scale some features like the quality ones. Then, we check for skewed features for which we normalize.
+In this section, we create, modify and delete features to help the prediction. We will impute missing values and scale features like the quality and condition ones. Then, we will check for skewed features for which we will normalize.
 
 
 ## Feature Replacement
-The categorical features will be 1-base except features having 'N', 'No' or 'None' as value.
+The categorical features will be 1-base except features having values meaning 'No' or 'None' which will be set to 0. Since the feature 'MasVnrType' has both, 'None' and NA, we will replace 'None' by 0 and the NA value will be replaced by the median in the imputation of missing values section. There are two reasons behind these replacements:
+
+1. It is logical that values having the 'Empty' or 'Nothing' meaning are equivalent to zero.
+
+2. We may want to convert the dataset as a sparse matrix to save memory. Having 0-base, the sparse matrix will be more useful.
 
 
 ```r
-dataset <- dataset %>%
-    mutate(MasVnrType = replace(MasVnrType, MasVnrType == "None", 0))
+## Replace By NA or NaN. Otherwise, the numeric conversion with factor will convert the value 0 as well
+## to 1-base. NA and NaN are not affected by that conversion.
+dataset <- dataset[MasVnrType == "None", MasVnrType := NaN]
+dataset <- dataset[CentralAir == "N", CentralAir := NA]
 
-## Transform all categorical features from string to numeric.
-features.string <- which(sapply(dataset, is.character))
-setDT(dataset)
+## Transform all categorical features from string to numeric 1-base.
+features.string <- which(sapply(dataset, function(x) is.character(x)))
 
 for(feature in features.string)
 {
     set(dataset, i = NULL, j = feature, value = as.numeric(factor(dataset[[feature]])))
 }
 
-test.id <- test$Id
-dataset$Id <- NULL
-
-## Since 'None' and 'N' is now 1, we subtract the vector by 1 to get back 0.
-dataset$MasVnrType <- dataset$MasVnrType - 1
-dataset$CentralAir <- dataset$CentralAir - 1
+dataset <- dataset[is.nan(MasVnrType), MasVnrType := 0]
 ```
 
 
 ## Missing Values Imputation
-All other NA values that need a more complex method than just replacing them by a constant will get a predicted value. The objective is to use the other features to predict a value that will replace the NA value. Features enumerated in the code below will use the mean.
+Features having NA values where NA means 'None' or 'No' will be replaced by 0 as specified at the previous section.
 
 
 ```r
-imputation.start <- mice(dataset, maxit = 0, print = FALSE)
-method <- imputation.start$method
-predictors <- imputation.start$predictorMatrix
-
-## Exclude from prediction since these features will not help.
-predictors[, c("SalePrice")] <- 0
-
-imputed <- mice(dataset, 
-                method = "mean",
-                predictorMatrix = predictors, 
-                m = 5,
-                print = FALSE)
-
-dataset <- complete(imputed, 1)
-
-densityplot(imputed)
+dataset <- dataset[is.na(Alley), Alley := 0]
+dataset <- dataset[is.na(BsmtQual), BsmtQual := 0]
+dataset <- dataset[is.na(BsmtCond), BsmtCond := 0]
+dataset <- dataset[is.na(BsmtExposure), BsmtExposure := 0]
+dataset <- dataset[is.na(BsmtFinType1), BsmtFinType1 := 0]
+dataset <- dataset[is.na(BsmtFinType2), BsmtFinType2 := 0]
+dataset <- dataset[is.na(FireplaceQu), FireplaceQu := 0]
+dataset <- dataset[is.na(GarageType), GarageType := 0]
+dataset <- dataset[is.na(GarageFinish), GarageFinish := 0]
+dataset <- dataset[is.na(GarageQual), GarageQual := 0]
+dataset <- dataset[is.na(GarageCond), GarageCond := 0]
+dataset <- dataset[is.na(PoolQC), PoolQC := 0]
+dataset <- dataset[is.na(Fence), Fence := 0]
+dataset <- dataset[is.na(MiscFeature), MiscFeature := 0]
+dataset <- dataset[is.na(CentralAir), CentralAir := 0]
 ```
 
-![](Analysis_files/figure-html/unnamed-chunk-35-1.png)<!-- -->
+All other NA values that need a more complex method than just replacing them by a constant will be replaced either by the mean or the median. Features containing real values will have their NA values replaced by the mean while features having integer values will have their NA values replaced by the median.
+
+
+```r
+dataset$MSZoning <- impute(dataset$MSZoning, median)
+dataset$LotFrontage <- impute(dataset$LotFrontage, mean)
+dataset$Utilities <- impute(dataset$Utilities, median)
+dataset$Exterior1st <- impute(dataset$Exterior1st, median)
+dataset$Exterior2nd <- impute(dataset$Exterior2nd, median)
+dataset$MasVnrType <- impute(dataset$MasVnrType, median)
+dataset$MasVnrArea <- impute(dataset$MasVnrArea, mean)
+
+dataset$BsmtFinSF1 <- impute(dataset$BsmtFinSF1, mean)
+dataset$BsmtFinSF2 <- impute(dataset$BsmtFinSF2, mean)
+dataset$BsmtUnfSF <- impute(dataset$BsmtUnfSF, mean)
+dataset <- dataset[is.na(TotalBsmtSF), TotalBsmtSF := BsmtFinSF1 + BsmtFinSF2 + BsmtUnfSF]
+
+dataset$Electrical <- impute(dataset$Electrical, median)
+dataset$BsmtFullBath <- impute(dataset$BsmtFullBath, median)
+dataset$BsmtHalfBath <- impute(dataset$BsmtHalfBath, median)
+dataset$KitchenQual <- impute(dataset$KitchenQual, median)
+dataset$Functional <- impute(dataset$Functional, median)
+dataset$GarageYrBlt <- impute(dataset$GarageYrBlt, median)
+dataset$GarageCars <- impute(dataset$GarageCars, median)
+dataset$GarageArea <- impute(dataset$GarageArea, mean)
+dataset$SaleType <- impute(dataset$SaleType, median)
+
+
+# imputation.start <- mice(dataset, maxit = 0, print = FALSE)
+# method <- imputation.start$method
+# predictors <- imputation.start$predictorMatrix
+# 
+# ## Exclude from prediction since these features will not help.
+# predictors[, c("SalePrice")] <- 0
+# 
+# imputed <- mice(dataset,
+#                 method = "mean",
+#                 predictorMatrix = predictors,
+#                 m = 5,
+#                 print = FALSE)
+# 
+# dataset <- complete(imputed, 1)
+# 
+# densityplot(imputed)
+```
 
 
 ## Feature Scaling
-Some features do not have the right scale. For example, the overall quality is rate from 1 to 10, but the other quality features have been transformed from 0 to 5. If $Q$ represents all quality features except the overall quality, then the scaling function will be $f(Q) = 2Q$ where $Q \in \{0, 1, 2, 3, 4, 5\}$. Thus, we obtain a scale from 0 to 10.
+Quality and Condition features do not have the right scale based on the most important feature, i.e. the overall quality. Indeed, the overall quality has integer values from 1 to 10, but the other quality features have been transformed from 0 to 4 or 5 previously. If $Q$ represents all quality features except the overall quality, then the scaling function will be $f(Q) = 2Q$ where $Q \in \{0, 1, 2, 3, 4, 5\}$.
 
 
 ```r
 dataset$ExterQual <- dataset$ExterQual * 2
-dataset$FireplaceQual <- dataset$FireplaceQual * 2
+dataset$FireplaceQu <- dataset$FireplaceQu * 2
 dataset$BsmtQual <- dataset$BsmtQual * 2
 dataset$KitchenQual <- dataset$KitchenQual * 2
 dataset$GarageQual <- dataset$GarageQual * 2
-dataset$HeatingQualCond <- dataset$HeatingQualCond * 2
-```
 
-We apply the same scaling for the conditions except for PoolQC and HeatingQC which will use the function $f(Q) = 2.5Q$.
-
-
-```r
 dataset$BsmtCond <- dataset$BsmtCond * 2
 dataset$GarageCond <- dataset$GarageCond * 2
 dataset$ExterCond <- dataset$ExterCond * 2
+```
 
-dataset$PoolQualCond <- dataset$PoolQualCond * 2.5
-dataset$HeatingQualCond <- dataset$HeatingQualCond * 2.5
+For Pool, Heating and Fence quality / condition features, we apply the function $f(Q) = 2.5Q$ where $Q \in \{0, 1, 2, 3, 4\}$.
+
+
+```r
+dataset$PoolQC <- dataset$PoolQC * 2.5
+dataset$HeatingQC <- dataset$HeatingQC * 2.5
 dataset$Fence <- dataset$Fence * 2.5
 ```
 
@@ -1252,44 +1294,76 @@ All area features are given in square feet, thus no need to convert any of them.
 
 
 ## Skewed Features
-We need to transform skewed features to ensure they follow the lognormal distribution. Thus, we will use the function $f(A) = \log{(A + 1)}$, where $A \in \mathbb{R}^n$ is a vector representing a feature of the dataset and $n$ the number of rows. We add 1 to avoid $\log{0}$ which is not defined for real numbers.
+We need to transform skewed features to ensure they follow the lognormal distribution. Thus, we will use the function $f(A) = \log{(A + 1)}$, where $A \in \mathbb{R}_+^n$ is a vector representing a feature of the dataset and $n$ the number of values in this vector. We add 1 to avoid $\log{0}$ which is not defined for real numbers.
+
+We set a skewness threshold and ensure to remove every categorical feature that is above the threshold. 
 
 
 ```
-                  Id           MSSubClass          LotFrontage 
-         0.001340392          1.404916465          1.534509318 
-             LotArea          OverallQual          OverallCond 
-        12.574589806          0.183681245          0.689919090 
-           YearBuilt         YearRemodAdd           MasVnrArea 
-        -0.609457810         -0.499315879          2.646222191 
-          BsmtFinSF1           BsmtFinSF2            BsmtUnfSF 
-         0.744087901          4.244208669          0.920808873 
-         TotalBsmtSF       FirstFloorArea      SecondFloorArea 
-         0.485894099          0.866187326          0.777064755 
+                  Id           MSSubClass             MSZoning 
+        -0.001871531          1.374804019         -1.750722976 
+         LotFrontage              LotArea               Street 
+         1.218845630         13.123758077        -15.489377015 
+               Alley             LotShape          LandContour 
+         4.135075257         -0.620601735         -3.130216279 
+           Utilities            LotConfig            LandSlope 
+        53.962953433         -1.200617335          4.971349668 
+        Neighborhood           Condition1           Condition2 
+        -0.010873129          2.988672757         12.336744483 
+            BldgType           HouseStyle          OverallQual 
+         2.161746640          0.320314715          0.181901537 
+         OverallCond            YearBuilt         YearRemodAdd 
+         0.569142975         -0.598087267         -0.449110772 
+           RoofStyle             RoofMatl          Exterior1st 
+         1.559493052          8.817091018         -0.733443015 
+         Exterior2nd           MasVnrType           MasVnrArea 
+        -0.683315234         -0.076009737          2.598616318 
+           ExterQual            ExterCond           Foundation 
+        -1.800172119         -2.495259240          0.010221264 
+            BsmtQual             BsmtCond         BsmtExposure 
+        -1.418842834         -2.959081421         -1.166927122 
+        BsmtFinType1           BsmtFinSF1         BsmtFinType2 
+        -0.089912114          0.973942791         -3.004685942 
+          BsmtFinSF2            BsmtUnfSF          TotalBsmtSF 
+         4.142752949          0.920303960          0.667235218 
+             Heating            HeatingQC           CentralAir 
+        12.070350596          0.484411535         -3.456086559 
+          Electrical       FirstFloorArea      SecondFloorArea 
+        -3.078561854          1.253011407          0.843236861 
         LowQualFinSF            GrLivArea         BsmtFullBath 
-         8.989291070          0.834331711          0.590543111 
+        12.080315112          0.977860376          0.622819753 
         BsmtHalfBath             FullBath             HalfBath 
-         4.124711657          0.017675354          0.683517982 
-        BedroomAbvGr         KitchenAbvGr         TotRmsAbvGrd 
-         0.214845115          4.476748271          0.660734867 
-          Fireplaces          GarageYrBlt           GarageCars 
-         0.632025598         -0.645115828         -0.343121438 
-          GarageArea           WoodDeckSF          OpenPorchSF 
-         0.132854112          1.549672002          2.337434927 
-       EnclosedPorch ThreeSeasonPorchArea          ScreenPorch 
-         3.081275084         10.279261797          4.111399891 
-            PoolArea              MiscVal               MoSold 
-        17.504555975         24.418175108          0.217658959 
-              YrSold            SalePrice 
-         0.093117776          1.564345548 
+         3.942891586          0.159917262          0.698770170 
+        BedroomAbvGr         KitchenAbvGr          KitchenQual 
+         0.328128677          4.298845189         -1.451569061 
+        TotRmsAbvGrd           Functional           Fireplaces 
+         0.749578622         -4.052494442          0.725957632 
+         FireplaceQu           GarageType          GarageYrBlt 
+         0.374334057          0.597287628         -0.684682583 
+        GarageFinish           GarageCars           GarageArea 
+        -0.530519738         -0.218413724          0.219684196 
+          GarageQual           GarageCond           PavedDrive 
+        -2.899053470         -3.222381001         -2.976397324 
+          WoodDeckSF          OpenPorchSF        EnclosedPorch 
+         1.848284506          2.529245458          4.000796390 
+ThreeSeasonPorchArea          ScreenPorch             PoolArea 
+        11.368093787          3.943508114         18.701828618 
+              PoolQC                Fence          MiscFeature 
+        22.984197237          1.912304776          5.121322119 
+             MiscVal               MoSold               YrSold 
+        21.932146954          0.198410684          0.130909395 
+            SaleType        SaleCondition            SalePrice 
+        -3.727327730         -2.794803939          0.988262679 
 ```
 
 ```
- [1] "LotFrontage"          "LotArea"              "MasVnrArea"          
- [4] "BsmtUnfSF"            "LowQualFinSF"         "GrLivArea"           
- [7] "BsmtHalfBath"         "KitchenAbvGr"         "WoodDeckSF"          
-[10] "OpenPorchSF"          "EnclosedPorch"        "ThreeSeasonPorchArea"
-[13] "ScreenPorch"          "PoolArea"             "MiscVal"             
+ [1] "LotFrontage"          "LotArea"              "LandSlope"           
+ [4] "MasVnrArea"           "BsmtFinSF1"           "BsmtUnfSF"           
+ [7] "SecondFloorArea"      "LowQualFinSF"         "GrLivArea"           
+[10] "BsmtHalfBath"         "KitchenAbvGr"         "WoodDeckSF"          
+[13] "OpenPorchSF"          "EnclosedPorch"        "ThreeSeasonPorchArea"
+[16] "ScreenPorch"          "PoolArea"             "MiscFeature"         
+[19] "MiscVal"             
 ```
 
 Let's apply the formula to the remaining features.
@@ -1305,22 +1379,27 @@ for(index in indices)
 
 
 ## Features Construction
-The objective is to add features that will be good predictors for models created in the section Models Building.
+The objective is to add features that will be good predictors for models created in the section Models Building. Clients may ask:
+
+* How old is the house? We need to know the year the house has been built and subtract the result to when the house has been sold.
+* How many years since the house has been remodeled? We need to know the year the house has been remodeled and subtract the result to when the house has been sold.
+* How many bathrooms are there in the house including the basement? Thus summing bathrooms in the basement and the ones above grade.
+* What is the total house area? We have to add the basement area to the grade living area.
+
 
 
 ```r
 dataset <- dataset %>%
     mutate(YearsSinceBuilt = YrSold - YearBuilt) %>%
     mutate(YearsSinceRemodeled = YrSold - YearRemodAdd) %>%
-    #mutate(TotalFloorsArea = FirstFloorArea + SecondFloorArea) %>%
-
+    mutate(OverallQualExp = exp(OverallQual) - 1) %>%
     mutate(TotalBaths = FullBath + HalfBath + BsmtFullBath + BsmtHalfBath) %>%
     mutate(TotalArea = TotalBsmtSF + GrLivArea)
 ```
 
 
 ## Noisy Features
-In this section, we remove features that add noise to the predictions. We use 3 models in the section Models Building which gives the importance of features. The method used to eliminate noisy features is to look at the intersection of the less important features after applying the 3 models.
+We remove features that add noise to the predictions. We will use 3 models in the section Models Building which gives the importance of features. The method used to eliminate noisy features is to look at the intersection of the less important features after applying the 3 models.
 
 
 
@@ -1333,11 +1412,11 @@ In this section, we remove features that add noise to the predictions. We use 3 
 # Models Building
 In this section, we train different models and give predictions on the sale price of each house. We will use the extreme gradient boosting trees, the random forest and LASSO algorithms to build models.
 
-Those algorithms need 2 inputs : the dataset as a matrix and the real sale prices from the train set. Since we had many NA and None values which have been replaced by 0, then it should be more efficient to use a sparse matrix to represent the dataset.
+Those algorithms need 2 inputs : the dataset as a matrix and the real sale prices from the train set. Since we had many NA and None values that have been replaced by 0, then it should be more efficient to use a sparse matrix to represent the dataset.
 
 
 ```
-Dataset contains 34075 zeros which is 14.25553 % of the dataset.
+Dataset contains 42661 zeros which is 17.84755 % of the dataset.
 ```
 
 
@@ -1350,18 +1429,19 @@ We also display 2 curves indicating the test and train RMSE mean progression. Th
 
 
 ```r
-param <- list(objective        = "reg:linear",
-              eta              = 0.09,
-              subsample        = 0.5,
-              colsample_bytree = 0.5,
-              min_child_weight = 3,
-              max_depth        = 5)
-
 cv.nfolds <- 10
-cv.nrounds <- 400
+cv.nrounds <- 500
 
 sale.price.log <- log(sale.price + 1)
 train.matrix <- xgb.DMatrix(train, label = sale.price.log)
+
+param <- list(objective        = "reg:linear",
+              eta              = 0.1,
+              subsample        = 0.5,
+              colsample_bytree = 0.5,
+              min_child_weight = 2,
+              max_depth        = 3)
+
 model.cv <- xgb.cv(data     = train.matrix,
                    nfold    = cv.nfolds,
                    param    = param,
@@ -1375,13 +1455,13 @@ cv.plot.title <- paste("Training RMSE using", cv.nfolds, "folds CV")
 print(ggplot(model.cv, aes(x = names)) +
           geom_line(aes(y = test.rmse.mean, colour = "test")) +
           geom_line(aes(y = train.rmse.mean, colour = "train")) +
-          geom_vline(xintercept = best$names, linetype="dotted") +
+          geom_vline(xintercept = best$names, linetype = "dotted") +
           ggtitle(cv.plot.title) +
           xlab("Number of trees") +
           ylab("RMSE"))
 ```
 
-![](Analysis_files/figure-html/unnamed-chunk-43-1.png)<!-- -->
+![](Analysis_files/figure-html/unnamed-chunk-45-1.png)<!-- -->
 
 ```r
 print(model.cv)
@@ -1389,17 +1469,17 @@ print(model.cv)
 
 ```
      train.rmse.mean train.rmse.std test.rmse.mean test.rmse.std names
-  1:       10.493925       0.002615      10.493818      0.023304     1
-  2:        9.552131       0.003115       9.552021      0.022853     2
-  3:        8.695354       0.002600       8.695241      0.023449     3
-  4:        7.915945       0.002699       7.915830      0.023382     4
-  5:        7.206408       0.002257       7.206289      0.023712     5
+  1:       10.378891       0.004061      10.378870      0.038210     1
+  2:        9.343790       0.004410       9.343762      0.038348     2
+  3:        8.412447       0.004201       8.412411      0.039158     3
+  4:        7.574868       0.003685       7.574824      0.039412     4
+  5:        6.821079       0.003650       6.821025      0.040538     5
  ---                                                                  
-396:        0.018273       0.000340       0.119495      0.010692   396
-397:        0.018190       0.000332       0.119475      0.010673   397
-398:        0.018108       0.000322       0.119462      0.010660   398
-399:        0.018012       0.000312       0.119445      0.010654   399
-400:        0.017937       0.000321       0.119460      0.010664   400
+496:        0.041395       0.001144       0.117082      0.016832   496
+497:        0.041336       0.001126       0.117107      0.016880   497
+498:        0.041277       0.001122       0.117098      0.016909   498
+499:        0.041216       0.001107       0.117112      0.016929   499
+500:        0.041147       0.001117       0.117144      0.016938   500
 ```
 
 ```r
@@ -1408,7 +1488,7 @@ cat("\nOptimal testing set RMSE score:", best$test.rmse.mean)
 
 ```
 
-Optimal testing set RMSE score: 0.118219
+Optimal testing set RMSE score: 0.116147
 ```
 
 ```r
@@ -1417,16 +1497,16 @@ cat("\nAssociated training set RMSE score:", best$train.rmse.mean)
 
 ```
 
-Associated training set RMSE score: 0.062051
+Associated training set RMSE score: 0.055742
 ```
 
 ```r
-cat("\nInterval testing set RMSE score: [", best$test.rmse.mean - best$test.rmse.std, ",", best$test.rmse.mean + best$test.rmse.std, "].")
+cat("\nInterval testing set RMSE score: [", best$test.rmse.mean - best$test.rmse.std, ",", best$test.rmse.mean + best$test.rmse.std, "]")
 ```
 
 ```
 
-Interval testing set RMSE score: [ 0.10711 , 0.129328 ].
+Interval testing set RMSE score: [ 0.099784 , 0.13251 ]
 ```
 
 ```r
@@ -1435,7 +1515,7 @@ cat("\nDifference between optimal training and testing sets RMSE:", abs(best$tra
 
 ```
 
-Difference between optimal training and testing sets RMSE: 0.056168
+Difference between optimal training and testing sets RMSE: 0.060405
 ```
 
 ```r
@@ -1444,7 +1524,7 @@ cat("\nOptimal number of trees:", best$names)
 
 ```
 
-Optimal number of trees: 124
+Optimal number of trees: 318
 ```
 
 Using the optimal number of trees given by the cross-validation, we can build the model using the test set as input.
@@ -1470,105 +1550,105 @@ print(importance.matrix)
 ```
 
 ```
-                Feature         Gain        Cover    Frequence
- 1:         OverallQual 0.2203613421 0.0514370041 0.0308441558
- 2:           GrLivArea 0.1959500056 0.0888614309 0.0616883117
- 3:           TotalArea 0.0578250362 0.0127742691 0.0129870130
- 4:     YearsSinceBuilt 0.0431669418 0.0279819892 0.0265151515
- 5:          GarageCars 0.0377959717 0.0055224770 0.0043290043
- 6:          TotalBaths 0.0360195130 0.0183426094 0.0129870130
- 7:         TotalBsmtSF 0.0330772136 0.0378398940 0.0384199134
- 8:          GarageArea 0.0257384185 0.0386357566 0.0459956710
- 9:       FireplaceQual 0.0239732357 0.0061861455 0.0048701299
-10:             LotArea 0.0231635803 0.0520494136 0.0481601732
-11:          Fireplaces 0.0203211964 0.0040656438 0.0054112554
-12:            MSZoning 0.0201701617 0.0164406327 0.0119047619
-13:      FirstFloorArea 0.0195719757 0.0293848657 0.0308441558
-14:         OverallCond 0.0195392179 0.0515557090 0.0297619048
-15:          BsmtFinSF1 0.0156498468 0.0328327043 0.0319264069
-16: YearsSinceRemodeled 0.0153942626 0.0239918849 0.0324675325
-17:           BsmtUnfSF 0.0130767635 0.0499316098 0.0514069264
-18:          CentralAir 0.0115864855 0.0029649254 0.0043290043
-19:         KitchenQual 0.0108028599 0.0091753515 0.0048701299
-20:        YearRemodAdd 0.0101870630 0.0175764230 0.0205627706
-21:          GarageCond 0.0094707099 0.0037338096 0.0021645022
-22:          GarageType 0.0089148613 0.0051447795 0.0043290043
-23:         LotFrontage 0.0078197628 0.0167427907 0.0297619048
-24:         GarageYrBlt 0.0075273580 0.0234091516 0.0248917749
-25:           YearBuilt 0.0066900001 0.0125935139 0.0189393939
-26:       SaleCondition 0.0066769350 0.0238974605 0.0146103896
-27:     SecondFloorArea 0.0060253681 0.0214990814 0.0243506494
-28:        Neighborhood 0.0059936384 0.0280062698 0.0270562771
-29:         OpenPorchSF 0.0048997002 0.0201798380 0.0216450216
-30:          WoodDeckSF 0.0048272152 0.0172958478 0.0194805195
-31:       EnclosedPorch 0.0045502689 0.0176519625 0.0162337662
-32:           ExterQual 0.0045447331 0.0083606040 0.0059523810
-33:              MoSold 0.0041534351 0.0106079041 0.0194805195
-34:        BsmtFullBath 0.0041066392 0.0079640216 0.0075757576
-35:          Condition1 0.0037018899 0.0134190527 0.0097402597
-36:          Functional 0.0035173404 0.0146600588 0.0081168831
-37:         Exterior1st 0.0033746611 0.0155665328 0.0167748918
-38:         ScreenPorch 0.0028655049 0.0192248029 0.0113636364
-39:          MasVnrArea 0.0028627026 0.0085548484 0.0194805195
-40:        BsmtExposure 0.0027836011 0.0043678018 0.0097402597
-41:        KitchenAbvGr 0.0022778461 0.0042949602 0.0037878788
-42:            BldgType 0.0020682464 0.0026762566 0.0037878788
-43:     HeatingQualCond 0.0018535249 0.0040980179 0.0102813853
-44:           ExterCond 0.0018407618 0.0039118670 0.0043290043
-45:        BsmtFinType1 0.0017792103 0.0068120442 0.0086580087
-46:            BsmtCond 0.0016851082 0.0052553910 0.0054112554
-47:         Exterior2nd 0.0016505597 0.0091025098 0.0119047619
-48:              YrSold 0.0016121041 0.0050260746 0.0119047619
-49:        BedroomAbvGr 0.0015706509 0.0017158258 0.0059523810
-50:            LotShape 0.0015149024 0.0025035949 0.0064935065
-51:          MasVnrType 0.0014884715 0.0059487357 0.0075757576
-52:            BsmtQual 0.0014056385 0.0025143862 0.0059523810
-53:          GarageQual 0.0013256680 0.0020611492 0.0032467532
-54:         LandContour 0.0012782759 0.0065179798 0.0070346320
-55:           LandSlope 0.0012665297 0.0051231968 0.0037878788
-56:        GarageFinish 0.0012403762 0.0041438812 0.0054112554
-57:             MiscVal 0.0012012213 0.0045296722 0.0037878788
-58:               Fence 0.0011657319 0.0013947829 0.0037878788
-59:        TotRmsAbvGrd 0.0011145814 0.0038660037 0.0043290043
-60:            HalfBath 0.0011121198 0.0034019754 0.0048701299
-61:          MSSubClass 0.0010923967 0.0019802140 0.0070346320
-62:          Electrical 0.0009964086 0.0003588126 0.0021645022
-63:           LotConfig 0.0008394550 0.0038039534 0.0070346320
-64:          Foundation 0.0007709757 0.0015836317 0.0048701299
-65:           RoofStyle 0.0007421485 0.0003830932 0.0027056277
-66:            SaleType 0.0007062327 0.0029190621 0.0016233766
-67:             Heating 0.0006735842 0.0002940645 0.0010822511
-68:          HouseStyle 0.0006075938 0.0061672606 0.0064935065
-69:               Alley 0.0005841497 0.0022553937 0.0027056277
-70:            FullBath 0.0005700661 0.0027086307 0.0032467532
-71:         MiscFeature 0.0005400680 0.0002401077 0.0010822511
-72:          PavedDrive 0.0005146828 0.0004478413 0.0027056277
-73:        LowQualFinSF 0.0004916061 0.0060296708 0.0032467532
-74:          BsmtFinSF2 0.0004199825 0.0028381269 0.0032467532
-75:            PoolArea 0.0004065149 0.0042410034 0.0016233766
-76:            RoofMatl 0.0003619876 0.0037526945 0.0016233766
-77:        PoolQualCond 0.0002907120 0.0027464004 0.0016233766
-78:        BsmtFinType2 0.0001342855 0.0000620503 0.0005411255
-79:        BsmtHalfBath 0.0001282038 0.0018588113 0.0010822511
-                Feature         Gain        Cover    Frequence
+                Feature          Gain        Cover   Frequence
+ 1:           GrLivArea 0.17138025952 0.0511334391 0.047910296
+ 2:         OverallQual 0.12883907413 0.0353185700 0.027522936
+ 3:          TotalBaths 0.06805530604 0.0203134077 0.014780836
+ 4:      FirstFloorArea 0.05047773354 0.0313106716 0.033639144
+ 5:         TotalBsmtSF 0.04752720147 0.0360199146 0.042813456
+ 6:           TotalArea 0.03359417562 0.0209620762 0.017329256
+ 7:             LotArea 0.03349580797 0.0403243041 0.042813456
+ 8:      OverallQualExp 0.03229089157 0.0193095518 0.013761468
+ 9:          GarageCars 0.02962263137 0.0073626132 0.007135576
+10:        GarageFinish 0.02936189427 0.0065273208 0.007135576
+11:          GarageType 0.02775193157 0.0051231266 0.005606524
+12:          GarageArea 0.02550620408 0.0409684576 0.042813456
+13:          BsmtFinSF1 0.02302054300 0.0313392672 0.035168196
+14:         OverallCond 0.02301765170 0.0284134863 0.021406728
+15:       SaleCondition 0.01520979704 0.0227018924 0.017838940
+16:        YearRemodAdd 0.01511448727 0.0193547028 0.018348624
+17: YearsSinceRemodeled 0.01349830702 0.0137063202 0.020387360
+18:     YearsSinceBuilt 0.01258339197 0.0242595998 0.028542304
+19:         OpenPorchSF 0.01213775636 0.0221645962 0.024464832
+20:           BsmtUnfSF 0.01151310963 0.0396365048 0.043832824
+21:          CentralAir 0.01137099156 0.0038694355 0.004587156
+22:            MSZoning 0.01111665445 0.0249233187 0.016309888
+23:           YearBuilt 0.00945790960 0.0188143965 0.022935780
+24:          Fireplaces 0.00919877439 0.0051472071 0.006625892
+25:         GarageYrBlt 0.00849528145 0.0317064948 0.025484200
+26:        Neighborhood 0.00791535097 0.0197294556 0.023445464
+27:     SecondFloorArea 0.00779134249 0.0249338539 0.022426096
+28:         LotFrontage 0.00730161531 0.0219794774 0.028542304
+29:          GarageCond 0.00711682729 0.0056679479 0.005606524
+30:          WoodDeckSF 0.00640518094 0.0276128096 0.024464832
+31:       EnclosedPorch 0.00601426799 0.0221706164 0.021406728
+32:          Condition1 0.00535385043 0.0192222600 0.014780836
+33:          Functional 0.00528427772 0.0139516403 0.009683996
+34:        BsmtFinType1 0.00516605166 0.0062549102 0.008664628
+35:            BsmtQual 0.00502140756 0.0032343123 0.004587156
+36:         Exterior1st 0.00496986933 0.0228042346 0.017838940
+37:        TotRmsAbvGrd 0.00493940895 0.0045798103 0.009174312
+38:          MasVnrArea 0.00458672812 0.0152881081 0.016309888
+39:              MoSold 0.00444523528 0.0147387717 0.021916412
+40:         KitchenQual 0.00430807862 0.0086584452 0.007135576
+41:               Fence 0.00428569253 0.0041629166 0.005606524
+42:         FireplaceQu 0.00414445259 0.0036647513 0.006625892
+43:         ScreenPorch 0.00363740180 0.0156553358 0.009683996
+44:           HeatingQC 0.00358256649 0.0030416683 0.005096840
+45:           ExterCond 0.00314050120 0.0059313284 0.007645260
+46:        BsmtExposure 0.00280250756 0.0065544114 0.008154944
+47:          PavedDrive 0.00250079533 0.0042441883 0.004077472
+48:               Alley 0.00217461335 0.0031063846 0.004077472
+49:            LotShape 0.00216457574 0.0049997140 0.005096840
+50:         Exterior2nd 0.00213661966 0.0117994455 0.011213048
+51:          Electrical 0.00209274315 0.0019339652 0.004587156
+52:        KitchenAbvGr 0.00187884920 0.0074860258 0.004077472
+53:           RoofStyle 0.00175197284 0.0098007640 0.006625892
+54:            BldgType 0.00171209343 0.0019309552 0.001529052
+55:              YrSold 0.00161003723 0.0036135802 0.007135576
+56:        BedroomAbvGr 0.00143709335 0.0048853317 0.007135576
+57:        BsmtFullBath 0.00143192949 0.0048943619 0.004077472
+58:            BsmtCond 0.00141382634 0.0067922063 0.005606524
+59:          HouseStyle 0.00141276565 0.0037279626 0.005096840
+60:           ExterQual 0.00136953270 0.0029558815 0.003567788
+61:          Foundation 0.00117744200 0.0050508851 0.004077472
+62:         LandContour 0.00111791292 0.0025194224 0.004587156
+63:           LotConfig 0.00108457922 0.0043314801 0.006116208
+64:          BsmtFinSF2 0.00104423687 0.0085816886 0.006116208
+65:            FullBath 0.00102957860 0.0020814583 0.002548420
+66:            SaleType 0.00093829946 0.0045060638 0.004077472
+67:           LandSlope 0.00088125939 0.0027737727 0.001529052
+68:          MSSubClass 0.00083210537 0.0026353098 0.007135576
+69:        BsmtFinType2 0.00082624411 0.0034374915 0.004077472
+70:          GarageQual 0.00069120352 0.0021822954 0.002548420
+71:        LowQualFinSF 0.00068009010 0.0045542248 0.003058104
+72:             Heating 0.00066419735 0.0003160566 0.001019368
+73:            HalfBath 0.00052706061 0.0036813066 0.003058104
+74:            RoofMatl 0.00046113789 0.0004831151 0.001529052
+75:            PoolArea 0.00045045699 0.0043390053 0.002548420
+76:             MiscVal 0.00031150204 0.0013199125 0.001019368
+77:          MasVnrType 0.00015170464 0.0024577161 0.001529052
+78:         MiscFeature 0.00014948759 0.0009286043 0.001019368
+79:        BsmtHalfBath 0.00004367246 0.0011016829 0.000509684
+                Feature          Gain        Cover   Frequence
 ```
 
 ```r
-# Display the features importance.
+# Display the 35 most important features.
 print(xgb.plot.importance(importance.matrix[1:35]))
 ```
 
-![](Analysis_files/figure-html/unnamed-chunk-44-1.png)<!-- -->
+![](Analysis_files/figure-html/unnamed-chunk-46-1.png)<!-- -->
 
 ```r
 rmse <- printRMSEInformation(prediction.train, sale.price)
 ```
 
 ```
-RMSE = 0.06310109
+RMSE = 0.05721195
 ```
 
-We can see that the model overfits. Indeed, the RMSE by the cross-validation for the test set is 0.118219 since the RMSE for the train set is 0.0631011.  
+We can see that the model overfits. Indeed, the RMSE by the cross-validation for the test set is 0.116147 since the RMSE for the train set is 0.057212.  
 
 
 ## Random Forest
@@ -1625,7 +1705,7 @@ print(lambda.best)
 ```
 
 ```
-[1] 0.001614402
+[1] 0.001340305
 ```
 
 ```r
@@ -1640,97 +1720,97 @@ print(selection)
 
 ```
              coef.name      coef.value
-1          (Intercept) 12.345069628663
+1          (Intercept) 13.152364516054
 2          (Intercept)  0.000000000000
 3           MSSubClass  0.000000000000
-4             MSZoning -0.006098774739
-5          LotFrontage  0.009371022374
-6              LotArea  0.085506578113
-7               Street  0.158486664313
-8                Alley  0.004888809213
-9             LotShape -0.000869071661
-10         LandContour -0.007547472289
-11           Utilities -0.018223192515
-12           LotConfig -0.000818199517
-13           LandSlope  0.000000000000
-14        Neighborhood -0.000005463342
-15          Condition1  0.000175645816
-16          Condition2 -0.002431140545
+4             MSZoning -0.004592049960
+5          LotFrontage  0.006344436037
+6              LotArea  0.088629140214
+7               Street  0.155182035492
+8                Alley  0.006742709925
+9             LotShape -0.000803788595
+10         LandContour -0.006555215579
+11           Utilities -0.045751616248
+12           LotConfig -0.001353163582
+13           LandSlope  0.003676967711
+14        Neighborhood -0.000160832602
+15          Condition1  0.000635102908
+16          Condition2 -0.002506231044
 17            BldgType  0.000000000000
-18          HouseStyle  0.000809251330
-19         OverallQual  0.059875276274
-20         OverallCond  0.042577823562
+18          HouseStyle  0.001809935790
+19         OverallQual  0.054630312729
+20         OverallCond  0.044114336827
 21           YearBuilt  0.000000000000
 22        YearRemodAdd  0.000000000000
-23           RoofStyle  0.000000000000
+23           RoofStyle  0.001754379853
 24            RoofMatl  0.000000000000
-25         Exterior1st -0.001335911164
-26         Exterior2nd  0.000640480402
-27          MasVnrType  0.000000000000
-28          MasVnrArea  0.000000000000
-29           ExterQual -0.008693445969
-30           ExterCond  0.004726860142
-31          Foundation  0.009068334516
-32            BsmtQual -0.007654113827
-33            BsmtCond  0.002952503800
-34        BsmtExposure -0.003394797060
-35        BsmtFinType1 -0.002643722323
-36          BsmtFinSF1  0.000067522217
-37        BsmtFinType2  0.000000000000
-38          BsmtFinSF2  0.000022100691
-39           BsmtUnfSF  0.000000000000
-40         TotalBsmtSF  0.000090614827
+25         Exterior1st -0.001995303493
+26         Exterior2nd  0.001202928649
+27          MasVnrType  0.014083819245
+28          MasVnrArea  0.000536689915
+29           ExterQual -0.006997482760
+30           ExterCond  0.004737121156
+31          Foundation  0.011505571842
+32            BsmtQual -0.008713116939
+33            BsmtCond  0.002854779901
+34        BsmtExposure -0.003442139567
+35        BsmtFinType1  0.000000000000
+36          BsmtFinSF1  0.008812475821
+37        BsmtFinType2  0.001141430353
+38          BsmtFinSF2  0.000000000000
+39           BsmtUnfSF -0.002005258154
+40         TotalBsmtSF  0.000100183124
 41             Heating  0.000000000000
-42     HeatingQualCond -0.001488884250
-43          CentralAir  0.067363596724
+42           HeatingQC -0.002990779491
+43          CentralAir  0.063559207850
 44          Electrical  0.000000000000
-45      FirstFloorArea  0.000073763051
-46     SecondFloorArea  0.000076634543
-47        LowQualFinSF -0.000543135044
-48           GrLivArea  0.278075642577
-49        BsmtFullBath  0.010747837458
-50        BsmtHalfBath -0.004292046591
-51            FullBath  0.000000000000
+45      FirstFloorArea  0.000011419549
+46     SecondFloorArea  0.000000000000
+47        LowQualFinSF -0.004499618431
+48           GrLivArea  0.383564564924
+49        BsmtFullBath  0.012606147045
+50        BsmtHalfBath -0.004973024746
+51            FullBath  0.000478801298
 52            HalfBath  0.000000000000
-53        BedroomAbvGr -0.005858413902
-54        KitchenAbvGr -0.187890437206
-55         KitchenQual -0.009439924597
-56        TotRmsAbvGrd  0.002095969447
-57          Functional  0.017848604922
-58          Fireplaces  0.023792823495
-59       FireplaceQual  0.000000000000
-60          GarageType  0.000976383932
+53        BedroomAbvGr -0.008126317890
+54        KitchenAbvGr -0.197477881943
+55         KitchenQual -0.008772498397
+56        TotRmsAbvGrd  0.003143604249
+57          Functional  0.019438119795
+58          Fireplaces  0.025837776759
+59         FireplaceQu  0.000000000000
+60          GarageType  0.001454168637
 61         GarageYrBlt  0.000000000000
-62        GarageFinish -0.000796824177
-63          GarageCars  0.027235064174
-64          GarageArea  0.000051488392
+62        GarageFinish -0.002374165668
+63          GarageCars  0.026263999845
+64          GarageArea  0.000058385287
 65          GarageQual  0.000000000000
-66          GarageCond  0.001756024360
-67          PavedDrive  0.021881364413
-68          WoodDeckSF  0.002597438027
+66          GarageCond  0.001798363801
+67          PavedDrive  0.019145580312
+68          WoodDeckSF  0.002833602423
 69         OpenPorchSF  0.000000000000
-70       EnclosedPorch  0.001006604512
-71         ScreenPorch  0.007504550454
-72            PoolArea  0.003578267201
-73        PoolQualCond -0.000502667447
-74               Fence -0.000112489981
-75         MiscFeature  0.000703974135
-76             MiscVal -0.004038285062
-77              MoSold  0.000000000000
-78              YrSold -0.002200810679
-79            SaleType -0.001091833926
-80       SaleCondition  0.022932351132
-81     YearsSinceBuilt -0.001740065576
-82 YearsSinceRemodeled -0.000766956273
-83          TotalBaths  0.016689641119
-84           TotalArea  0.000034130439
+70       EnclosedPorch  0.001377373798
+71         ScreenPorch  0.007771316204
+72            PoolArea  0.005817944138
+73               Fence -0.000196573654
+74         MiscFeature  0.000000000000
+75             MiscVal -0.004053677319
+76              MoSold  0.000000000000
+77              YrSold -0.002966642472
+78            SaleType -0.001035998914
+79       SaleCondition  0.021833007663
+80     YearsSinceBuilt -0.001756007240
+81 YearsSinceRemodeled -0.000729277764
+82      OverallQualExp  0.000003686187
+83          TotalBaths  0.021071079270
+84           TotalArea  0.000029699592
 ```
 
 ```r
 plot(cv.model, ylab = "Root Mean-Squared Error")
 ```
 
-![](Analysis_files/figure-html/unnamed-chunk-46-1.png)<!-- -->
+![](Analysis_files/figure-html/unnamed-chunk-48-1.png)<!-- -->
 
 ```r
 features <- as.vector(selection$coef.name[selection$coef.value != 0])
@@ -1742,24 +1822,25 @@ print(features)
  [1] "MSZoning"            "LotFrontage"         "LotArea"            
  [4] "Street"              "Alley"               "LotShape"           
  [7] "LandContour"         "Utilities"           "LotConfig"          
-[10] "Neighborhood"        "Condition1"          "Condition2"         
-[13] "HouseStyle"          "OverallQual"         "OverallCond"        
-[16] "Exterior1st"         "Exterior2nd"         "ExterQual"          
-[19] "ExterCond"           "Foundation"          "BsmtQual"           
-[22] "BsmtCond"            "BsmtExposure"        "BsmtFinType1"       
-[25] "BsmtFinSF1"          "BsmtFinSF2"          "TotalBsmtSF"        
-[28] "HeatingQualCond"     "CentralAir"          "FirstFloorArea"     
-[31] "SecondFloorArea"     "LowQualFinSF"        "GrLivArea"          
-[34] "BsmtFullBath"        "BsmtHalfBath"        "BedroomAbvGr"       
-[37] "KitchenAbvGr"        "KitchenQual"         "TotRmsAbvGrd"       
-[40] "Functional"          "Fireplaces"          "GarageType"         
-[43] "GarageFinish"        "GarageCars"          "GarageArea"         
-[46] "GarageCond"          "PavedDrive"          "WoodDeckSF"         
-[49] "EnclosedPorch"       "ScreenPorch"         "PoolArea"           
-[52] "PoolQualCond"        "Fence"               "MiscFeature"        
-[55] "MiscVal"             "YrSold"              "SaleType"           
-[58] "SaleCondition"       "YearsSinceBuilt"     "YearsSinceRemodeled"
-[61] "TotalBaths"          "TotalArea"          
+[10] "LandSlope"           "Neighborhood"        "Condition1"         
+[13] "Condition2"          "HouseStyle"          "OverallQual"        
+[16] "OverallCond"         "RoofStyle"           "Exterior1st"        
+[19] "Exterior2nd"         "MasVnrType"          "MasVnrArea"         
+[22] "ExterQual"           "ExterCond"           "Foundation"         
+[25] "BsmtQual"            "BsmtCond"            "BsmtExposure"       
+[28] "BsmtFinSF1"          "BsmtFinType2"        "BsmtUnfSF"          
+[31] "TotalBsmtSF"         "HeatingQC"           "CentralAir"         
+[34] "FirstFloorArea"      "LowQualFinSF"        "GrLivArea"          
+[37] "BsmtFullBath"        "BsmtHalfBath"        "FullBath"           
+[40] "BedroomAbvGr"        "KitchenAbvGr"        "KitchenQual"        
+[43] "TotRmsAbvGrd"        "Functional"          "Fireplaces"         
+[46] "GarageType"          "GarageFinish"        "GarageCars"         
+[49] "GarageArea"          "GarageCond"          "PavedDrive"         
+[52] "WoodDeckSF"          "EnclosedPorch"       "ScreenPorch"        
+[55] "PoolArea"            "Fence"               "MiscVal"            
+[58] "YrSold"              "SaleType"            "SaleCondition"      
+[61] "YearsSinceBuilt"     "YearsSinceRemodeled" "OverallQualExp"     
+[64] "TotalBaths"          "TotalArea"          
 ```
 
 ```r
@@ -1774,90 +1855,90 @@ varImp(model, lambda = lambda.best)
 
 ```
            Overall
-1  13.253841379165
+1  13.559609119603
 2   0.000000000000
-3   0.000025515155
-4   0.007326640501
-5   0.011742816505
-6   0.086889181646
-7   0.170013715008
-8   0.008461681528
-9   0.000826413548
-10  0.008281563063
-11  0.046202835870
-12  0.001008732197
-13  0.000000000000
-14  0.000150977326
-15  0.000638163555
-16  0.005820264156
+3   0.000022846451
+4   0.005240245485
+5   0.007622656717
+6   0.089426955459
+7   0.161809441621
+8   0.008350773381
+9   0.000748455455
+10  0.006950155254
+11  0.060425238699
+12  0.001537740708
+13  0.004189686058
+14  0.000257599632
+15  0.000960553805
+16  0.003821433427
 17  0.000000000000
-18  0.000884223856
-19  0.058713336539
-20  0.043739709766
-21  0.001326747809
-22  0.000724956535
-23  0.000372471117
+18  0.001738996469
+19  0.053417687447
+20  0.044945206023
+21  0.001098016398
+22  0.000701377772
+23  0.002068760607
 24  0.000000000000
-25  0.002664276048
-26  0.001805587718
-27  0.000074086127
-28  0.000000000000
-29  0.008539639906
-30  0.005123614839
-31  0.009870459998
-32  0.007964137938
-33  0.003147005284
-34  0.003423207548
-35  0.003094215311
-36  0.000066811934
-37  0.001658112177
-38  0.000032600290
-39  0.000000000000
-40  0.000118093518
+25  0.002838430996
+26  0.001932889359
+27  0.015077757001
+28  0.000793675236
+29  0.006917068359
+30  0.004871730812
+31  0.011976098842
+32  0.008659446081
+33  0.003139067185
+34  0.003418685059
+35  0.000000000000
+36  0.008753220003
+37  0.001634154977
+38  0.000000000000
+39  0.002555370128
+40  0.000123185175
 41  0.000000000000
-42  0.001485862786
-43  0.069608154426
+42  0.002978615786
+43  0.064220275057
 44  0.000000000000
-45  0.000097511219
-46  0.000098412191
-47  0.000386659425
-48  0.247952249800
-49  0.013307926750
-50  0.003468260833
-51  0.001928060893
+45  0.000000000000
+46  0.001584470928
+47  0.005775763055
+48  0.400486283366
+49  0.013423970868
+50  0.005282027232
+51  0.002304163997
 52  0.000000000000
-53  0.008048329633
-54  0.196000382814
-55  0.009353102254
-56  0.003322032885
-57  0.018353424724
-58  0.023372073541
+53  0.009782757826
+54  0.209288486067
+55  0.008782456474
+56  0.004197418646
+57  0.019822750343
+58  0.025723613134
 59  0.000000000000
-60  0.001779387269
+60  0.001985912792
 61  0.000000000000
-62  0.002404456388
-63  0.026527486331
-64  0.000049268338
+62  0.003211762886
+63  0.025729939945
+64  0.000056487478
 65  0.000000000000
-66  0.002086417226
-67  0.022356884150
-68  0.002809075173
+66  0.001951489211
+67  0.019254425861
+68  0.002968382613
 69  0.000000000000
-70  0.001798099710
-71  0.008070485539
-72  0.005986347166
-73  0.001606063618
-74  0.000387161055
-75  0.000000000000
-76  0.004506503243
-77  0.000000000000
-78  0.004617850718
-79  0.001632278968
-80  0.023621802743
-81  0.000475838744
-82  0.000002570796
-83  0.014223352076
-84  0.000004364393
+70  0.001756359619
+71  0.008013807686
+72  0.006838423306
+73  0.000335162113
+74  0.000000000000
+75  0.004303827892
+76  0.000000000000
+77  0.005024454385
+78  0.001269315888
+79  0.022051515797
+80  0.000673816249
+81  0.000002497353
+82  0.000003947461
+83  0.020219564166
+84  0.000006436672
 ```
 
 ```r
@@ -1869,7 +1950,7 @@ rmse <- printRMSEInformation(prediction.train, sale.price)
 ```
 
 ```
-RMSE = 0.1109649
+RMSE = 0.1110756
 ```
 
 This means that, in a linear regression represented by $$y_j = \beta_0 + \sum_{i = 1}^n \beta_i x_i$$ where $\beta_i$ are the coefficient values, $\beta_0$ is the intercept value, $x_i$ are the features (predictors) and $y_j$ represents the $j^{th}$ house, every feature having their coefficient equals to 0 is removed.
@@ -1880,40 +1961,32 @@ We write the 'Id' associated to the predicted SalePrice in the submission file a
 
 
 ```r
-prediction.test <- 0.6 * net.prediction.test + 0.4 * xgb.prediction.test
+prediction.test <- 0.5 * net.prediction.test + 0.5 * xgb.prediction.test
 
 submission <- data.frame(Id = test.id, SalePrice = prediction.test)
-write.csv(submission, "Submission_Combined.csv", row.names = FALSE)
+write.csv(submission, "Submission.csv", row.names = FALSE)
 
 head(submission, 15)
 ```
 
 ```
      Id SalePrice
-1  1461 123633.13
-2  1462 157155.67
-3  1463 179946.00
-4  1464 193791.76
-5  1465 188333.09
-6  1466 174386.54
-7  1467 177775.99
-8  1468 161510.22
-9  1469 189493.36
-10 1470 116878.36
-11 1471 199721.36
-12 1472  97635.21
-13 1473  96113.83
-14 1474 146486.63
-15 1475 116861.94
+1  1461 122836.37
+2  1462 157132.62
+3  1463 180987.43
+4  1464 195524.91
+5  1465 189166.03
+6  1466 173689.34
+7  1467 175957.82
+8  1468 164966.65
+9  1469 188548.09
+10 1470 121702.02
+11 1471 198322.65
+12 1472  98641.32
+13 1473  96760.52
+14 1474 148309.64
+15 1475 114130.33
 ```
-
-
-
-<!------------------------------------------------------------BENCHMARK------------------------------------------------------------------------------->
-
-
-
-# Benchmark
 
 
 
