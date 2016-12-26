@@ -7,16 +7,6 @@ getUniqueValues <- function(feature)
     }
 }
 
-getCategoryMean <- function(feature)
-{
-    values <- sort(unique(feature))
-    values.num <- as.numeric(factor(feature))
-    values.mean <- round(mean(values.num, na.rm = TRUE), 0)
-    value <- values[values.mean]
-    
-    return(value)
-}
-
 printRMSEInformation <- function(train.prediction, train.sale.price)
 {
     sale.price.log <- log(train.sale.price + 1)

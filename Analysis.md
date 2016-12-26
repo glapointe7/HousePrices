@@ -2,15 +2,15 @@
 Gabriel Lapointe  
 September 18, 2016  
 
-# Objectives
+# Requirements
+Requirements are taken [here](https://www.kaggle.com/c/house-prices-advanced-regression-techniques).
 
-
-## Business Objective
+## Business Requirement
 We have to answer this question: How do home features add up to its price tag?
 
 
-## Technical Objective
-With 79 explanatory variables describing (almost) every aspect of residential homes in Ames, Iowa, we have to predict the final price of each home.
+## Functional Requirement
+With 79 explanatory variables describing (almost) every aspect of residential homes in Ames, Iowa, this analysis shall predict the final price of each home.
 
 
 
@@ -104,7 +104,7 @@ system.time({
 
 ```
    user  system elapsed 
-  0.027   0.000   0.027 
+  0.023   0.004   0.026 
 ```
 
 | Dataset            |  File Size (Kb) | # Houses              | # Features            |
@@ -1357,13 +1357,14 @@ ThreeSeasonPorchArea          ScreenPorch             PoolArea
 ```
 
 ```
- [1] "LotFrontage"          "LotArea"              "LandSlope"           
- [4] "MasVnrArea"           "BsmtFinSF1"           "BsmtUnfSF"           
- [7] "SecondFloorArea"      "LowQualFinSF"         "GrLivArea"           
-[10] "BsmtHalfBath"         "KitchenAbvGr"         "WoodDeckSF"          
-[13] "OpenPorchSF"          "EnclosedPorch"        "ThreeSeasonPorchArea"
-[16] "ScreenPorch"          "PoolArea"             "MiscFeature"         
-[19] "MiscVal"             
+ [1] "LotFrontage"          "LotArea"              "Alley"               
+ [4] "LandSlope"            "MasVnrArea"           "BsmtFinSF1"          
+ [7] "BsmtUnfSF"            "SecondFloorArea"      "LowQualFinSF"        
+[10] "GrLivArea"            "BsmtHalfBath"         "KitchenAbvGr"        
+[13] "WoodDeckSF"           "OpenPorchSF"          "EnclosedPorch"       
+[16] "ThreeSeasonPorchArea" "ScreenPorch"          "PoolArea"            
+[19] "PoolQC"               "Fence"                "MiscFeature"         
+[22] "MiscVal"             
 ```
 
 Let's apply the formula to the remaining features.
@@ -1401,6 +1402,10 @@ dataset <- dataset %>%
 ## Noisy Features
 We remove features that add noise to the predictions. We will use 3 models in the section Models Building which gives the importance of features. The method used to eliminate noisy features is to look at the intersection of the less important features after applying the 3 models.
 
+The other method used is to eliminate features having a high percentage of NA values determined at the dataset cleaning section. This assumes that the customer will not really check about the fence, the alley and the pool quality and condition.
+
+Finally, we remove the Id feature since it is only a unique identifier of a house which should not have any prediction importance on the sale price.
+
 
 
 
@@ -1430,17 +1435,17 @@ We also display 2 curves indicating the test and train RMSE mean progression. Th
 
 ```r
 cv.nfolds <- 10
-cv.nrounds <- 500
+cv.nrounds <- 400
 
 sale.price.log <- log(sale.price + 1)
 train.matrix <- xgb.DMatrix(train, label = sale.price.log)
 
 param <- list(objective        = "reg:linear",
-              eta              = 0.1,
-              subsample        = 0.5,
-              colsample_bytree = 0.5,
+              eta              = 0.12,
+              subsample        = 0.75,
+              colsample_bytree = 0.75,
               min_child_weight = 2,
-              max_depth        = 3)
+              max_depth        = 2)
 
 model.cv <- xgb.cv(data     = train.matrix,
                    nfold    = cv.nfolds,
@@ -1469,17 +1474,17 @@ print(model.cv)
 
 ```
      train.rmse.mean train.rmse.std test.rmse.mean test.rmse.std names
-  1:       10.378891       0.004061      10.378870      0.038210     1
-  2:        9.343790       0.004410       9.343762      0.038348     2
-  3:        8.412447       0.004201       8.412411      0.039158     3
-  4:        7.574868       0.003685       7.574824      0.039412     4
-  5:        6.821079       0.003650       6.821025      0.040538     5
+  1:       10.148544       0.003862      10.148521      0.038346     1
+  2:        8.933889       0.003723       8.933858      0.038689     2
+  3:        7.865086       0.003357       7.865045      0.039371     3
+  4:        6.924774       0.002667       6.924809      0.037186     4
+  5:        6.097548       0.002526       6.097837      0.035552     5
  ---                                                                  
-496:        0.041395       0.001144       0.117082      0.016832   496
-497:        0.041336       0.001126       0.117107      0.016880   497
-498:        0.041277       0.001122       0.117098      0.016909   498
-499:        0.041216       0.001107       0.117112      0.016929   499
-500:        0.041147       0.001117       0.117144      0.016938   500
+396:        0.067134       0.001198       0.116132      0.016829   396
+397:        0.067065       0.001190       0.116144      0.016812   397
+398:        0.066973       0.001189       0.116165      0.016791   398
+399:        0.066909       0.001179       0.116185      0.016867   399
+400:        0.066831       0.001189       0.116200      0.016939   400
 ```
 
 ```r
@@ -1488,7 +1493,7 @@ cat("\nOptimal testing set RMSE score:", best$test.rmse.mean)
 
 ```
 
-Optimal testing set RMSE score: 0.116147
+Optimal testing set RMSE score: 0.116126
 ```
 
 ```r
@@ -1497,7 +1502,7 @@ cat("\nAssociated training set RMSE score:", best$train.rmse.mean)
 
 ```
 
-Associated training set RMSE score: 0.055742
+Associated training set RMSE score: 0.067322
 ```
 
 ```r
@@ -1506,7 +1511,7 @@ cat("\nInterval testing set RMSE score: [", best$test.rmse.mean - best$test.rmse
 
 ```
 
-Interval testing set RMSE score: [ 0.099784 , 0.13251 ]
+Interval testing set RMSE score: [ 0.099223 , 0.133029 ]
 ```
 
 ```r
@@ -1515,7 +1520,7 @@ cat("\nDifference between optimal training and testing sets RMSE:", abs(best$tra
 
 ```
 
-Difference between optimal training and testing sets RMSE: 0.060405
+Difference between optimal training and testing sets RMSE: 0.048804
 ```
 
 ```r
@@ -1524,7 +1529,7 @@ cat("\nOptimal number of trees:", best$names)
 
 ```
 
-Optimal number of trees: 318
+Optimal number of trees: 393
 ```
 
 Using the optimal number of trees given by the cross-validation, we can build the model using the test set as input.
@@ -1550,87 +1555,86 @@ print(importance.matrix)
 ```
 
 ```
-                Feature          Gain        Cover   Frequence
- 1:           GrLivArea 0.17138025952 0.0511334391 0.047910296
- 2:         OverallQual 0.12883907413 0.0353185700 0.027522936
- 3:          TotalBaths 0.06805530604 0.0203134077 0.014780836
- 4:      FirstFloorArea 0.05047773354 0.0313106716 0.033639144
- 5:         TotalBsmtSF 0.04752720147 0.0360199146 0.042813456
- 6:           TotalArea 0.03359417562 0.0209620762 0.017329256
- 7:             LotArea 0.03349580797 0.0403243041 0.042813456
- 8:      OverallQualExp 0.03229089157 0.0193095518 0.013761468
- 9:          GarageCars 0.02962263137 0.0073626132 0.007135576
-10:        GarageFinish 0.02936189427 0.0065273208 0.007135576
-11:          GarageType 0.02775193157 0.0051231266 0.005606524
-12:          GarageArea 0.02550620408 0.0409684576 0.042813456
-13:          BsmtFinSF1 0.02302054300 0.0313392672 0.035168196
-14:         OverallCond 0.02301765170 0.0284134863 0.021406728
-15:       SaleCondition 0.01520979704 0.0227018924 0.017838940
-16:        YearRemodAdd 0.01511448727 0.0193547028 0.018348624
-17: YearsSinceRemodeled 0.01349830702 0.0137063202 0.020387360
-18:     YearsSinceBuilt 0.01258339197 0.0242595998 0.028542304
-19:         OpenPorchSF 0.01213775636 0.0221645962 0.024464832
-20:           BsmtUnfSF 0.01151310963 0.0396365048 0.043832824
-21:          CentralAir 0.01137099156 0.0038694355 0.004587156
-22:            MSZoning 0.01111665445 0.0249233187 0.016309888
-23:           YearBuilt 0.00945790960 0.0188143965 0.022935780
-24:          Fireplaces 0.00919877439 0.0051472071 0.006625892
-25:         GarageYrBlt 0.00849528145 0.0317064948 0.025484200
-26:        Neighborhood 0.00791535097 0.0197294556 0.023445464
-27:     SecondFloorArea 0.00779134249 0.0249338539 0.022426096
-28:         LotFrontage 0.00730161531 0.0219794774 0.028542304
-29:          GarageCond 0.00711682729 0.0056679479 0.005606524
-30:          WoodDeckSF 0.00640518094 0.0276128096 0.024464832
-31:       EnclosedPorch 0.00601426799 0.0221706164 0.021406728
-32:          Condition1 0.00535385043 0.0192222600 0.014780836
-33:          Functional 0.00528427772 0.0139516403 0.009683996
-34:        BsmtFinType1 0.00516605166 0.0062549102 0.008664628
-35:            BsmtQual 0.00502140756 0.0032343123 0.004587156
-36:         Exterior1st 0.00496986933 0.0228042346 0.017838940
-37:        TotRmsAbvGrd 0.00493940895 0.0045798103 0.009174312
-38:          MasVnrArea 0.00458672812 0.0152881081 0.016309888
-39:              MoSold 0.00444523528 0.0147387717 0.021916412
-40:         KitchenQual 0.00430807862 0.0086584452 0.007135576
-41:               Fence 0.00428569253 0.0041629166 0.005606524
-42:         FireplaceQu 0.00414445259 0.0036647513 0.006625892
-43:         ScreenPorch 0.00363740180 0.0156553358 0.009683996
-44:           HeatingQC 0.00358256649 0.0030416683 0.005096840
-45:           ExterCond 0.00314050120 0.0059313284 0.007645260
-46:        BsmtExposure 0.00280250756 0.0065544114 0.008154944
-47:          PavedDrive 0.00250079533 0.0042441883 0.004077472
-48:               Alley 0.00217461335 0.0031063846 0.004077472
-49:            LotShape 0.00216457574 0.0049997140 0.005096840
-50:         Exterior2nd 0.00213661966 0.0117994455 0.011213048
-51:          Electrical 0.00209274315 0.0019339652 0.004587156
-52:        KitchenAbvGr 0.00187884920 0.0074860258 0.004077472
-53:           RoofStyle 0.00175197284 0.0098007640 0.006625892
-54:            BldgType 0.00171209343 0.0019309552 0.001529052
-55:              YrSold 0.00161003723 0.0036135802 0.007135576
-56:        BedroomAbvGr 0.00143709335 0.0048853317 0.007135576
-57:        BsmtFullBath 0.00143192949 0.0048943619 0.004077472
-58:            BsmtCond 0.00141382634 0.0067922063 0.005606524
-59:          HouseStyle 0.00141276565 0.0037279626 0.005096840
-60:           ExterQual 0.00136953270 0.0029558815 0.003567788
-61:          Foundation 0.00117744200 0.0050508851 0.004077472
-62:         LandContour 0.00111791292 0.0025194224 0.004587156
-63:           LotConfig 0.00108457922 0.0043314801 0.006116208
-64:          BsmtFinSF2 0.00104423687 0.0085816886 0.006116208
-65:            FullBath 0.00102957860 0.0020814583 0.002548420
-66:            SaleType 0.00093829946 0.0045060638 0.004077472
-67:           LandSlope 0.00088125939 0.0027737727 0.001529052
-68:          MSSubClass 0.00083210537 0.0026353098 0.007135576
-69:        BsmtFinType2 0.00082624411 0.0034374915 0.004077472
-70:          GarageQual 0.00069120352 0.0021822954 0.002548420
-71:        LowQualFinSF 0.00068009010 0.0045542248 0.003058104
-72:             Heating 0.00066419735 0.0003160566 0.001019368
-73:            HalfBath 0.00052706061 0.0036813066 0.003058104
-74:            RoofMatl 0.00046113789 0.0004831151 0.001529052
-75:            PoolArea 0.00045045699 0.0043390053 0.002548420
-76:             MiscVal 0.00031150204 0.0013199125 0.001019368
-77:          MasVnrType 0.00015170464 0.0024577161 0.001529052
-78:         MiscFeature 0.00014948759 0.0009286043 0.001019368
-79:        BsmtHalfBath 0.00004367246 0.0011016829 0.000509684
-                Feature          Gain        Cover   Frequence
+                Feature          Gain        Cover    Frequence
+ 1:           GrLivArea 0.16403840967 0.0615728120 0.0518453427
+ 2:         OverallQual 0.15420911408 0.0640557875 0.0483304042
+ 3:          TotalBaths 0.07236262609 0.0201294135 0.0184534271
+ 4:           TotalArea 0.05076979144 0.0108449350 0.0105448155
+ 5:          GarageCars 0.04791142349 0.0086394267 0.0087873462
+ 6:         TotalBsmtSF 0.04693448242 0.0268479136 0.0307557118
+ 7:             LotArea 0.03781893121 0.0501243266 0.0509666081
+ 8:         OverallCond 0.03527168456 0.0398924281 0.0351493849
+ 9:          GarageType 0.03423820677 0.0061647515 0.0070298770
+10:        GarageFinish 0.02710420123 0.0013671780 0.0017574692
+11:          CentralAir 0.02599404637 0.0116927513 0.0087873462
+12: YearsSinceRemodeled 0.02494048853 0.0204614255 0.0263620387
+13:          BsmtFinSF1 0.02486047393 0.0179938649 0.0202108963
+14:            MSZoning 0.02159934418 0.0282589646 0.0237258348
+15:      FirstFloorArea 0.01748030819 0.0148326363 0.0202108963
+16:          GarageArea 0.01741644360 0.0355988014 0.0439367311
+17:         FireplaceQu 0.01719533203 0.0050833409 0.0096660808
+18:        YearRemodAdd 0.01270065169 0.0104749787 0.0123022847
+19:       SaleCondition 0.01192596644 0.0162780743 0.0184534271
+20:      OverallQualExp 0.01010097979 0.0091172868 0.0079086116
+21:     YearsSinceBuilt 0.00890245292 0.0291174528 0.0298769772
+22:         GarageYrBlt 0.00831679427 0.0210768335 0.0237258348
+23:           YearBuilt 0.00745771248 0.0171081043 0.0184534271
+24:          Fireplaces 0.00709515365 0.0051129849 0.0043936731
+25:            BsmtQual 0.00686927829 0.0008964324 0.0008787346
+26:           BsmtUnfSF 0.00670037938 0.0549918598 0.0492091388
+27:         LotFrontage 0.00664149269 0.0194570892 0.0193321617
+28:          WoodDeckSF 0.00633225007 0.0212558828 0.0263620387
+29:        Neighborhood 0.00593562494 0.0212784122 0.0237258348
+30:          GarageCond 0.00542637495 0.0025612355 0.0026362039
+31:        BsmtFinType1 0.00523089294 0.0052540900 0.0105448155
+32:          GarageQual 0.00465949693 0.0012818035 0.0008787346
+33:     SecondFloorArea 0.00463759610 0.0208396821 0.0246045694
+34:          Functional 0.00459954391 0.0163112755 0.0114235501
+35:         Exterior1st 0.00447696345 0.0249222440 0.0202108963
+36:         ScreenPorch 0.00446208034 0.0171816212 0.0158172232
+37:         OpenPorchSF 0.00389138255 0.0185464277 0.0184534271
+38:       EnclosedPorch 0.00382969405 0.0253538596 0.0237258348
+39:          Condition1 0.00371249580 0.0223147640 0.0166959578
+40:         KitchenQual 0.00321250804 0.0061600084 0.0079086116
+41:        BsmtExposure 0.00287584645 0.0067374722 0.0070298770
+42:        KitchenAbvGr 0.00274958922 0.0102058119 0.0070298770
+43:          MasVnrArea 0.00178918642 0.0130670439 0.0149384886
+44:         Exterior2nd 0.00160814822 0.0027758575 0.0061511424
+45:           ExterCond 0.00152363312 0.0056062598 0.0070298770
+46:              MoSold 0.00142970798 0.0084995073 0.0105448155
+47:               Alley 0.00138383974 0.0032916619 0.0052724077
+48:           RoofStyle 0.00123590888 0.0055778017 0.0061511424
+49:        BedroomAbvGr 0.00110879840 0.0117970980 0.0105448155
+50:          Foundation 0.00105499924 0.0104287342 0.0096660808
+51:        TotRmsAbvGrd 0.00099017364 0.0021758644 0.0035149385
+52:              YrSold 0.00092838934 0.0051995451 0.0061511424
+53:            SaleType 0.00089320428 0.0073208647 0.0070298770
+54:               Fence 0.00083613433 0.0031422565 0.0035149385
+55:            BsmtCond 0.00083434880 0.0066651410 0.0052724077
+56:           LotConfig 0.00081354581 0.0075058428 0.0061511424
+57:          HouseStyle 0.00080172827 0.0023276413 0.0052724077
+58:            PoolArea 0.00079683259 0.0080299475 0.0061511424
+59:          BsmtFinSF2 0.00079013239 0.0109291237 0.0079086116
+60:           LandSlope 0.00076277886 0.0074773846 0.0061511424
+61:           ExterQual 0.00073412276 0.0017999794 0.0043936731
+62:          PavedDrive 0.00073276117 0.0033296061 0.0043936731
+63:          MasVnrType 0.00072396674 0.0050584400 0.0035149385
+64:           HeatingQC 0.00067172729 0.0035750578 0.0043936731
+65:             Heating 0.00065103701 0.0026632106 0.0026362039
+66:        BsmtFullBath 0.00063848986 0.0045165490 0.0052724077
+67:          MSSubClass 0.00056130032 0.0040220883 0.0043936731
+68:          Electrical 0.00056015018 0.0045616078 0.0043936731
+69:            LotShape 0.00055887712 0.0029857365 0.0043936731
+70:        LowQualFinSF 0.00050172684 0.0076007034 0.0052724077
+71:          Condition2 0.00025578733 0.0026134088 0.0017574692
+72:            HalfBath 0.00021439265 0.0026098515 0.0017574692
+73:        BsmtFinType2 0.00020983251 0.0009924787 0.0026362039
+74:            FullBath 0.00012282477 0.0012426735 0.0008787346
+75:         LandContour 0.00012173082 0.0012984041 0.0017574692
+76:            BldgType 0.00011599498 0.0001600772 0.0008787346
+77:            RoofMatl 0.00009613536 0.0004351729 0.0008787346
+78:             MiscVal 0.00005914289 0.0013209335 0.0008787346
+                Feature          Gain        Cover    Frequence
 ```
 
 ```r
@@ -1645,10 +1649,10 @@ rmse <- printRMSEInformation(prediction.train, sale.price)
 ```
 
 ```
-RMSE = 0.05721195
+RMSE = 0.06997755
 ```
 
-We can see that the model overfits. Indeed, the RMSE by the cross-validation for the test set is 0.116147 since the RMSE for the train set is 0.057212.  
+We can see that the model overfits. Indeed, the RMSE by the cross-validation for the test set is 0.116126 since the RMSE for the train set is 0.0699775.  
 
 
 ## Random Forest
@@ -1705,7 +1709,7 @@ print(lambda.best)
 ```
 
 ```
-[1] 0.001340305
+[1] 0.001112745
 ```
 
 ```r
@@ -1720,90 +1724,90 @@ print(selection)
 
 ```
              coef.name      coef.value
-1          (Intercept) 13.152364516054
+1          (Intercept) 13.534010546620
 2          (Intercept)  0.000000000000
-3           MSSubClass  0.000000000000
-4             MSZoning -0.004592049960
-5          LotFrontage  0.006344436037
-6              LotArea  0.088629140214
-7               Street  0.155182035492
-8                Alley  0.006742709925
-9             LotShape -0.000803788595
-10         LandContour -0.006555215579
-11           Utilities -0.045751616248
-12           LotConfig -0.001353163582
-13           LandSlope  0.003676967711
-14        Neighborhood -0.000160832602
-15          Condition1  0.000635102908
-16          Condition2 -0.002506231044
+3           MSSubClass  0.000006774744
+4             MSZoning -0.005578325083
+5          LotFrontage  0.006540667371
+6              LotArea  0.088897815025
+7               Street  0.160156527816
+8                Alley  0.007838328425
+9             LotShape -0.000787201058
+10         LandContour -0.006898160981
+11           Utilities -0.055929045177
+12           LotConfig -0.001470877701
+13           LandSlope  0.003915152201
+14        Neighborhood -0.000196963814
+15          Condition1  0.000790261615
+16          Condition2 -0.003459357425
 17            BldgType  0.000000000000
-18          HouseStyle  0.001809935790
-19         OverallQual  0.054630312729
-20         OverallCond  0.044114336827
+18          HouseStyle  0.001942900107
+19         OverallQual  0.054142905899
+20         OverallCond  0.044556872799
 21           YearBuilt  0.000000000000
 22        YearRemodAdd  0.000000000000
-23           RoofStyle  0.001754379853
+23           RoofStyle  0.001976507823
 24            RoofMatl  0.000000000000
-25         Exterior1st -0.001995303493
-26         Exterior2nd  0.001202928649
-27          MasVnrType  0.014083819245
-28          MasVnrArea  0.000536689915
-29           ExterQual -0.006997482760
-30           ExterCond  0.004737121156
-31          Foundation  0.011505571842
-32            BsmtQual -0.008713116939
-33            BsmtCond  0.002854779901
-34        BsmtExposure -0.003442139567
+25         Exterior1st -0.002595933749
+26         Exterior2nd  0.001728962784
+27          MasVnrType  0.014670895810
+28          MasVnrArea  0.000726429540
+29           ExterQual -0.006936678950
+30           ExterCond  0.004834555594
+31          Foundation  0.011900066315
+32            BsmtQual -0.008704479933
+33            BsmtCond  0.003018909726
+34        BsmtExposure -0.003419786312
 35        BsmtFinType1  0.000000000000
-36          BsmtFinSF1  0.008812475821
-37        BsmtFinType2  0.001141430353
+36          BsmtFinSF1  0.008790227118
+37        BsmtFinType2  0.001442714704
 38          BsmtFinSF2  0.000000000000
-39           BsmtUnfSF -0.002005258154
-40         TotalBsmtSF  0.000100183124
+39           BsmtUnfSF -0.002320485704
+40         TotalBsmtSF  0.000100246141
 41             Heating  0.000000000000
-42           HeatingQC -0.002990779491
-43          CentralAir  0.063559207850
+42           HeatingQC -0.003005885385
+43          CentralAir  0.063855392805
 44          Electrical  0.000000000000
-45      FirstFloorArea  0.000011419549
-46     SecondFloorArea  0.000000000000
-47        LowQualFinSF -0.004499618431
-48           GrLivArea  0.383564564924
-49        BsmtFullBath  0.012606147045
-50        BsmtHalfBath -0.004973024746
-51            FullBath  0.000478801298
+45      FirstFloorArea  0.000011129892
+46     SecondFloorArea -0.000125154017
+47        LowQualFinSF -0.004729931790
+48           GrLivArea  0.384973357167
+49        BsmtFullBath  0.012999147911
+50        BsmtHalfBath -0.005451888694
+51            FullBath  0.001400152892
 52            HalfBath  0.000000000000
-53        BedroomAbvGr -0.008126317890
-54        KitchenAbvGr -0.197477881943
-55         KitchenQual -0.008772498397
-56        TotRmsAbvGrd  0.003143604249
-57          Functional  0.019438119795
-58          Fireplaces  0.025837776759
+53        BedroomAbvGr -0.008940498424
+54        KitchenAbvGr -0.202460471618
+55         KitchenQual -0.008730923793
+56        TotRmsAbvGrd  0.003570611514
+57          Functional  0.019646592245
+58          Fireplaces  0.025661931681
 59         FireplaceQu  0.000000000000
-60          GarageType  0.001454168637
+60          GarageType  0.001885057307
 61         GarageYrBlt  0.000000000000
-62        GarageFinish -0.002374165668
-63          GarageCars  0.026263999845
-64          GarageArea  0.000058385287
+62        GarageFinish -0.002915597942
+63          GarageCars  0.025796970236
+64          GarageArea  0.000057487568
 65          GarageQual  0.000000000000
-66          GarageCond  0.001798363801
-67          PavedDrive  0.019145580312
-68          WoodDeckSF  0.002833602423
+66          GarageCond  0.001901621786
+67          PavedDrive  0.019126674902
+68          WoodDeckSF  0.002897253826
 69         OpenPorchSF  0.000000000000
-70       EnclosedPorch  0.001377373798
-71         ScreenPorch  0.007771316204
-72            PoolArea  0.005817944138
-73               Fence -0.000196573654
+70       EnclosedPorch  0.001687047309
+71         ScreenPorch  0.007950157883
+72            PoolArea  0.006529014276
+73               Fence -0.001227271119
 74         MiscFeature  0.000000000000
-75             MiscVal -0.004053677319
+75             MiscVal -0.004175513300
 76              MoSold  0.000000000000
-77              YrSold -0.002966642472
-78            SaleType -0.001035998914
-79       SaleCondition  0.021833007663
-80     YearsSinceBuilt -0.001756007240
-81 YearsSinceRemodeled -0.000729277764
-82      OverallQualExp  0.000003686187
-83          TotalBaths  0.021071079270
-84           TotalArea  0.000029699592
+77              YrSold -0.003161198263
+78            SaleType -0.001211103916
+79       SaleCondition  0.021999340911
+80     YearsSinceBuilt -0.001756255731
+81 YearsSinceRemodeled -0.000725038079
+82      OverallQualExp  0.000003735041
+83          TotalBaths  0.020609288937
+84           TotalArea  0.000029960720
 ```
 
 ```r
@@ -1819,28 +1823,29 @@ print(features)
 ```
 
 ```
- [1] "MSZoning"            "LotFrontage"         "LotArea"            
- [4] "Street"              "Alley"               "LotShape"           
- [7] "LandContour"         "Utilities"           "LotConfig"          
-[10] "LandSlope"           "Neighborhood"        "Condition1"         
-[13] "Condition2"          "HouseStyle"          "OverallQual"        
-[16] "OverallCond"         "RoofStyle"           "Exterior1st"        
-[19] "Exterior2nd"         "MasVnrType"          "MasVnrArea"         
-[22] "ExterQual"           "ExterCond"           "Foundation"         
-[25] "BsmtQual"            "BsmtCond"            "BsmtExposure"       
-[28] "BsmtFinSF1"          "BsmtFinType2"        "BsmtUnfSF"          
-[31] "TotalBsmtSF"         "HeatingQC"           "CentralAir"         
-[34] "FirstFloorArea"      "LowQualFinSF"        "GrLivArea"          
-[37] "BsmtFullBath"        "BsmtHalfBath"        "FullBath"           
-[40] "BedroomAbvGr"        "KitchenAbvGr"        "KitchenQual"        
-[43] "TotRmsAbvGrd"        "Functional"          "Fireplaces"         
-[46] "GarageType"          "GarageFinish"        "GarageCars"         
-[49] "GarageArea"          "GarageCond"          "PavedDrive"         
-[52] "WoodDeckSF"          "EnclosedPorch"       "ScreenPorch"        
-[55] "PoolArea"            "Fence"               "MiscVal"            
-[58] "YrSold"              "SaleType"            "SaleCondition"      
-[61] "YearsSinceBuilt"     "YearsSinceRemodeled" "OverallQualExp"     
-[64] "TotalBaths"          "TotalArea"          
+ [1] "MSSubClass"          "MSZoning"            "LotFrontage"        
+ [4] "LotArea"             "Street"              "Alley"              
+ [7] "LotShape"            "LandContour"         "Utilities"          
+[10] "LotConfig"           "LandSlope"           "Neighborhood"       
+[13] "Condition1"          "Condition2"          "HouseStyle"         
+[16] "OverallQual"         "OverallCond"         "RoofStyle"          
+[19] "Exterior1st"         "Exterior2nd"         "MasVnrType"         
+[22] "MasVnrArea"          "ExterQual"           "ExterCond"          
+[25] "Foundation"          "BsmtQual"            "BsmtCond"           
+[28] "BsmtExposure"        "BsmtFinSF1"          "BsmtFinType2"       
+[31] "BsmtUnfSF"           "TotalBsmtSF"         "HeatingQC"          
+[34] "CentralAir"          "FirstFloorArea"      "SecondFloorArea"    
+[37] "LowQualFinSF"        "GrLivArea"           "BsmtFullBath"       
+[40] "BsmtHalfBath"        "FullBath"            "BedroomAbvGr"       
+[43] "KitchenAbvGr"        "KitchenQual"         "TotRmsAbvGrd"       
+[46] "Functional"          "Fireplaces"          "GarageType"         
+[49] "GarageFinish"        "GarageCars"          "GarageArea"         
+[52] "GarageCond"          "PavedDrive"          "WoodDeckSF"         
+[55] "EnclosedPorch"       "ScreenPorch"         "PoolArea"           
+[58] "Fence"               "MiscVal"             "YrSold"             
+[61] "SaleType"            "SaleCondition"       "YearsSinceBuilt"    
+[64] "YearsSinceRemodeled" "OverallQualExp"      "TotalBaths"         
+[67] "TotalArea"          
 ```
 
 ```r
@@ -1848,97 +1853,97 @@ print(features)
 model <- glmnet(train, 
                 sale.price.log, 
                 alpha = 1, 
-                lambda = 0.001)#lambda.best)
+                lambda = 0.001) #lambda.best found
 
 varImp(model, lambda = lambda.best)
 ```
 
 ```
            Overall
-1  13.559609119603
+1  13.613334028459
 2   0.000000000000
-3   0.000022846451
-4   0.005240245485
-5   0.007622656717
-6   0.089426955459
-7   0.161809441621
-8   0.008350773381
-9   0.000748455455
-10  0.006950155254
-11  0.060425238699
-12  0.001537740708
-13  0.004189686058
-14  0.000257599632
-15  0.000960553805
-16  0.003821433427
+3   0.000024026137
+4   0.005839364603
+5   0.006967837336
+6   0.089340122463
+7   0.162314123571
+8   0.008763427561
+9   0.000738769501
+10  0.007028050520
+11  0.060010656766
+12  0.001535878328
+13  0.003933899005
+14  0.000232329477
+15  0.000919244501
+16  0.003696154774
 17  0.000000000000
-18  0.001738996469
-19  0.053417687447
-20  0.044945206023
-21  0.001098016398
-22  0.000701377772
-23  0.002068760607
+18  0.001749856762
+19  0.053478347910
+20  0.044905047877
+21  0.001201740638
+22  0.000702431316
+23  0.002087400172
 24  0.000000000000
-25  0.002838430996
-26  0.001932889359
-27  0.015077757001
-28  0.000793675236
-29  0.006917068359
-30  0.004871730812
-31  0.011976098842
-32  0.008659446081
-33  0.003139067185
-34  0.003418685059
+25  0.002888149117
+26  0.001974402492
+27  0.015043881537
+28  0.000819280297
+29  0.006933074593
+30  0.004875385112
+31  0.012131227150
+32  0.008706781948
+33  0.003135988893
+34  0.003449153154
 35  0.000000000000
-36  0.008753220003
-37  0.001634154977
+36  0.008754208434
+37  0.001620593325
 38  0.000000000000
-39  0.002555370128
-40  0.000123185175
+39  0.002551543452
+40  0.000124406585
 41  0.000000000000
-42  0.002978615786
-43  0.064220275057
+42  0.002992093016
+43  0.064210971450
 44  0.000000000000
 45  0.000000000000
-46  0.001584470928
-47  0.005775763055
-48  0.400486283366
-49  0.013423970868
-50  0.005282027232
-51  0.002304163997
+46  0.001462986533
+47  0.005641158730
+48  0.400072702223
+49  0.013381736474
+50  0.005584719739
+51  0.002233832035
 52  0.000000000000
-53  0.009782757826
-54  0.209288486067
-55  0.008782456474
-56  0.004197418646
-57  0.019822750343
-58  0.025723613134
+53  0.009664496923
+54  0.209520918978
+55  0.008765166475
+56  0.004009550288
+57  0.019784212710
+58  0.025592050567
 59  0.000000000000
-60  0.001985912792
+60  0.002041295413
 61  0.000000000000
-62  0.003211762886
-63  0.025729939945
-64  0.000056487478
+62  0.003229738474
+63  0.026122412093
+64  0.000055313430
 65  0.000000000000
-66  0.001951489211
-67  0.019254425861
-68  0.002968382613
+66  0.001955987202
+67  0.019180978991
+68  0.002939579262
 69  0.000000000000
-70  0.001756359619
-71  0.008013807686
-72  0.006838423306
-73  0.000335162113
+70  0.001775816974
+71  0.007985909629
+72  0.006939840183
+73  0.001360237040
 74  0.000000000000
-75  0.004303827892
+75  0.004280846593
 76  0.000000000000
-77  0.005024454385
-78  0.001269315888
-79  0.022051515797
-80  0.000673816249
-81  0.000002497353
-82  0.000003947461
-83  0.020219564166
-84  0.000006436672
+77  0.005152197348
+78  0.001274386415
+79  0.022047275161
+80  0.000550962498
+81  0.000010354663
+82  0.000003894311
+83  0.020183117852
+84  0.000006136404
 ```
 
 ```r
@@ -1950,7 +1955,7 @@ rmse <- printRMSEInformation(prediction.train, sale.price)
 ```
 
 ```
-RMSE = 0.1110756
+RMSE = 0.1111072
 ```
 
 This means that, in a linear regression represented by $$y_j = \beta_0 + \sum_{i = 1}^n \beta_i x_i$$ where $\beta_i$ are the coefficient values, $\beta_0$ is the intercept value, $x_i$ are the features (predictors) and $y_j$ represents the $j^{th}$ house, every feature having their coefficient equals to 0 is removed.
@@ -1971,22 +1976,24 @@ head(submission, 15)
 
 ```
      Id SalePrice
-1  1461 122836.37
-2  1462 157132.62
-3  1463 180987.43
-4  1464 195524.91
-5  1465 189166.03
-6  1466 173689.34
-7  1467 175957.82
-8  1468 164966.65
-9  1469 188548.09
-10 1470 121702.02
-11 1471 198322.65
-12 1472  98641.32
-13 1473  96760.52
-14 1474 148309.64
-15 1475 114130.33
+1  1461 124008.66
+2  1462 153341.29
+3  1463 183907.15
+4  1464 194370.06
+5  1465 187722.35
+6  1466 173506.72
+7  1467 174425.50
+8  1468 163074.14
+9  1469 190198.31
+10 1470 120367.97
+11 1471 199393.92
+12 1472  98020.96
+13 1473  95856.92
+14 1474 146914.07
+15 1475 114113.61
 ```
+
+From the previous sections and in virtue of results we got, this dataset is enough to solve the problem.
 
 
 
@@ -1995,4 +2002,21 @@ head(submission, 15)
 
 
 # Conclusion
-From the previous sections and in virtue of results we got, this dataset is enough to solve the problem.
+How do home features add up to its price tag? In other terms, we have to find what features are the most important to get an accurate prediction. Among the 79 features, here is the list of the ones adding the most to the price tag in descending order:
+
+
+```
+                Feature       Gain       Cover   Frequence
+ 1:           GrLivArea 0.16403841 0.061572812 0.051845343
+ 2:         OverallQual 0.15420911 0.064055788 0.048330404
+ 3:          TotalBaths 0.07236263 0.020129414 0.018453427
+ 4:           TotalArea 0.05076979 0.010844935 0.010544815
+ 5:          GarageCars 0.04791142 0.008639427 0.008787346
+ 6:         TotalBsmtSF 0.04693448 0.026847914 0.030755712
+ 7:             LotArea 0.03781893 0.050124327 0.050966608
+ 8:         OverallCond 0.03527168 0.039892428 0.035149385
+ 9:          GarageType 0.03423821 0.006164751 0.007029877
+10:        GarageFinish 0.02710420 0.001367178 0.001757469
+11:          CentralAir 0.02599405 0.011692751 0.008787346
+12: YearsSinceRemodeled 0.02494049 0.020461426 0.026362039
+```

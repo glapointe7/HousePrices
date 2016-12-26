@@ -3,25 +3,25 @@ title: "House Prices"
 author: "Gabriel Lapointe"
 date: "September 18, 2016"
 output:
-  pdf_document:
-    toc: yes
   html_document:
     highlight: pygments
     keep_md: yes
     number_sections: yes
     toc: yes
+  pdf_document:
+    toc: yes
 variant: markdown_github
 ---
 
-# Objectives
+# Requirements
+Requirements are taken [here](https://www.kaggle.com/c/house-prices-advanced-regression-techniques).
 
-
-## Business Objective
+## Business Requirement
 We have to answer this question: How do home features add up to its price tag?
 
 
-## Technical Objective
-With 79 explanatory variables describing (almost) every aspect of residential homes in Ames, Iowa, we have to predict the final price of each home.
+## Functional Requirement
+With 79 explanatory variables describing (almost) every aspect of residential homes in Ames, Iowa, this analysis shall predict the final price of each home.
 
 
 
@@ -828,8 +828,8 @@ skewed <- apply(dataset, 2, function(feature) skewness(feature))
 print(skewed)
 
 skewed <- setdiff(names(skewed[skewed > 0.8]), 
-                  c("SalePrice", "MSSubClass", "FirstFloorArea", "BsmtFinSF2", "Alley", "Utilities", "Condition1",
-                    "Condition2", "BldgType", "RoofStyle", "RoofMatl", "Heating", "PoolQC", "Fence"))
+                  c("SalePrice", "MSSubClass", "FirstFloorArea", "BsmtFinSF2", "Utilities", "Condition1",
+                    "Condition2", "BldgType", "RoofStyle", "RoofMatl", "Heating")) #, "PoolQC", "Fence", "Alley"))
 print(skewed)
 ```
 
@@ -866,9 +866,15 @@ dataset <- dataset %>%
 ## Noisy Features
 We remove features that add noise to the predictions. We will use 3 models in the section Models Building which gives the importance of features. The method used to eliminate noisy features is to look at the intersection of the less important features after applying the 3 models.
 
+The other method used is to eliminate features having a high percentage of NA values determined at the dataset cleaning section. This assumes that the customer will not really check about the fence, the alley and the pool quality and condition.
+
+Finally, we remove the Id feature since it is only a unique identifier of a house which should not have any prediction importance on the sale price.
+
 ```{r echo=FALSE}
 dataset$ThreeSeasonPorchArea <- NULL
 dataset$PoolQC <- NULL
+#dataset$Alley <- NULL
+#dataset$Fence <- NULL
 
 test.id <- test$Id
 dataset$Id <- NULL
@@ -914,17 +920,17 @@ We also display 2 curves indicating the test and train RMSE mean progression. Th
 
 ```{r}
 cv.nfolds <- 10
-cv.nrounds <- 500
+cv.nrounds <- 400
 
 sale.price.log <- log(sale.price + 1)
 train.matrix <- xgb.DMatrix(train, label = sale.price.log)
 
 param <- list(objective        = "reg:linear",
-              eta              = 0.1,
-              subsample        = 0.5,
-              colsample_bytree = 0.5,
+              eta              = 0.12,
+              subsample        = 0.75,
+              colsample_bytree = 0.75,
               min_child_weight = 2,
-              max_depth        = 3)
+              max_depth        = 2)
 
 model.cv <- xgb.cv(data     = train.matrix,
                    nfold    = cv.nfolds,
@@ -1048,7 +1054,7 @@ print(features)
 model <- glmnet(train, 
                 sale.price.log, 
                 alpha = 1, 
-                lambda = 0.001)#lambda.best)
+                lambda = 0.001) #lambda.best found
 
 varImp(model, lambda = lambda.best)
 
@@ -1074,6 +1080,8 @@ write.csv(submission, "Submission.csv", row.names = FALSE)
 head(submission, 15)
 ```
 
+From the previous sections and in virtue of results we got, this dataset is enough to solve the problem.
+
 
 
 <!------------------------------------------------------------CONCLUSION------------------------------------------------------------------------------>
@@ -1081,4 +1089,8 @@ head(submission, 15)
 
 
 # Conclusion
-From the previous sections and in virtue of results we got, this dataset is enough to solve the problem.
+How do home features add up to its price tag? In other terms, we have to find what features are the most important to get an accurate prediction. Among the 79 features, here is the list of the ones adding the most to the price tag in descending order:
+
+```{r echo=FALSE}
+print(importance.matrix[1:12])
+```
